@@ -6,7 +6,7 @@ metadata:
   labels:
     app: file-service
 spec:
-  replicas: 2
+  replicas: 1  # Reduced from 2
   selector:
     matchLabels:
       app: file-service
@@ -40,17 +40,17 @@ spec:
           httpGet:
             path: /health
             port: 7000
-          initialDelaySeconds: 10
+          initialDelaySeconds: 15
           periodSeconds: 5
           timeoutSeconds: 3
           successThreshold: 1
-          failureThreshold: 6
+          failureThreshold: 10
         livenessProbe:
           httpGet:
             path: /health
             port: 7000
           initialDelaySeconds: 30
-          periodSeconds: 10
+          periodSeconds: 15
           timeoutSeconds: 5
           successThreshold: 1
           failureThreshold: 3
@@ -58,18 +58,18 @@ spec:
           httpGet:
             path: /health
             port: 7000
-          initialDelaySeconds: 15
+          initialDelaySeconds: 10
           periodSeconds: 5
           timeoutSeconds: 3
           successThreshold: 1
-          failureThreshold: 2
+          failureThreshold: 3
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: "128Mi"    # Reduced from 256Mi
+            cpu: "100m"        # Reduced from 200m
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "512Mi"    # Reduced from 1Gi
+            cpu: "500m"        # Reduced from 1000m
       volumes:
       - name: file-uploads
         persistentVolumeClaim:

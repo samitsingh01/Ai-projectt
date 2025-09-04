@@ -4,3 +4,4 @@ metadata:
   name: bedrock-chat
   labels:
     name: bedrock-chat
+    app: bedrock-chat

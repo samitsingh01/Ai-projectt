@@ -6,7 +6,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: local-path
+  storageClassName: local-path  # Change to your storage class
   resources:
     requests:
       storage: 20Gi

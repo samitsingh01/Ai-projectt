@@ -5,7 +5,9 @@ metadata:
   namespace: bedrock-chat
 data:
   init.sql: |
+    CREATE DATABASE IF NOT EXISTS bedrock_chat;
     USE bedrock_chat;
+    
     CREATE TABLE IF NOT EXISTS users (
         id INT AUTO_INCREMENT PRIMARY KEY,
         session_id VARCHAR(255) UNIQUE NOT NULL,
@@ -13,6 +15,7 @@ data:
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_session_id (session_id)
     );
+    
     CREATE TABLE IF NOT EXISTS conversations (
         id INT AUTO_INCREMENT PRIMARY KEY,
         session_id VARCHAR(255) NOT NULL,
@@ -24,6 +27,7 @@ data:
         INDEX idx_created_at (created_at),
         INDEX idx_session_created (session_id, created_at)
     );
+    
     CREATE TABLE IF NOT EXISTS uploaded_files (
         id INT AUTO_INCREMENT PRIMARY KEY,
         session_id VARCHAR(255) NOT NULL,

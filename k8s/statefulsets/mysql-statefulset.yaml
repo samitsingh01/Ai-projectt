@@ -42,6 +42,8 @@ spec:
               key: MYSQL_PASSWORD
         args:
         - --default-authentication-plugin=mysql_native_password
+        - --innodb-buffer-pool-size=64M      # Reduced from 128M
+        - --max-connections=50               # Reduced from 100
         ports:
         - containerPort: 3306
           name: mysql
@@ -53,56 +55,43 @@ spec:
         startupProbe:
           exec:
             command:
-            - mysqladmin
-            - ping
-            - -h
-            - localhost
-            - -u
-            - root
-            - -p$(MYSQL_ROOT_PASSWORD)
+            - sh
+            - -c
+            - 'mysqladmin ping -h localhost -u root -p"$MYSQL_ROOT_PASSWORD"'
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
           successThreshold: 1
-          failureThreshold: 10
+          failureThreshold: 15
         livenessProbe:
           exec:
             command:
-            - mysqladmin
-            - ping
-            - -h
-            - localhost
-            - -u
-            - root
-            - -p$(MYSQL_ROOT_PASSWORD)
+            - sh
+            - -c
+            - 'mysqladmin ping -h localhost -u root -p"$MYSQL_ROOT_PASSWORD"'
           initialDelaySeconds: 60
-          periodSeconds: 10
+          periodSeconds: 20
           timeoutSeconds: 5
           successThreshold: 1
           failureThreshold: 3
         readinessProbe:
           exec:
             command:
-            - mysql
-            - -h
-            - localhost
-            - -u
-            - root
-            - -p$(MYSQL_ROOT_PASSWORD)
-            - -e
-            - "SELECT 1"
+            - sh
+            - -c
+            - 'mysql -h localhost -u root -p"$MYSQL_ROOT_PASSWORD" -e "SELECT 1"'
           initialDelaySeconds: 45
-          periodSeconds: 5
-          timeoutSeconds: 3
+          periodSeconds: 10
+          timeoutSeconds: 5
           successThreshold: 1
-          failureThreshold: 2
+          failureThreshold: 3
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "100m"
+            memory: "256Mi"    # Reduced from 512Mi
+            cpu: "100m"        # Reduced from 200m
           limits:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "1Gi"      # Reduced from 2Gi
+            cpu: "500m"        # Reduced from 1000m
       volumes:
       - name: init-script
         configMap:

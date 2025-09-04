@@ -1,21 +1,35 @@
-# --- Default Deny All Network Policy ---
+# Network Policies for Bedrock Chat Application
+# Provides secure network segmentation between services
+
+---
+# Allow all traffic within bedrock-chat namespace
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: default-deny-all
+  name: allow-namespace-traffic
   namespace: bedrock-chat
 spec:
   podSelector: {}
   policyTypes:
   - Ingress
   - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: bedrock-chat
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: bedrock-chat
 
 ---
-# --- Frontend Network Policy ---
+# Allow external access to frontend via ingress
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: frontend-network-policy
+  name: allow-frontend-ingress
   namespace: bedrock-chat
 spec:
   podSelector:
@@ -23,57 +37,29 @@ spec:
       app: frontend
   policyTypes:
   - Ingress
-  - Egress
   ingress:
   - from:
     - namespaceSelector:
         matchLabels:
           name: ingress-nginx
-    - podSelector: {}
+  - from: []  # Allow external traffic
     ports:
     - protocol: TCP
       port: 3000
-  egress:
-  - to:
-    - podSelector:
-        matchLabels:
-          app: api-gateway
-    ports:
-    - protocol: TCP
-      port: 8000
-  - to:
-    - namespaceSelector: {}
-    ports:
-    - protocol: TCP
-      port: 53
-    - protocol: UDP
-      port: 53
 
 ---
-# --- API Gateway Network Policy ---
+# Allow API Gateway to communicate with backend services
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: api-gateway-network-policy
+  name: allow-api-gateway-backend
   namespace: bedrock-chat
 spec:
   podSelector:
     matchLabels:
       app: api-gateway
   policyTypes:
-  - Ingress
   - Egress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: frontend
-    - namespaceSelector:
-        matchLabels:
-          name: ingress-nginx
-    ports:
-    - protocol: TCP
-      port: 8000
   egress:
   - to:
     - podSelector:
@@ -96,27 +82,19 @@ spec:
     ports:
     - protocol: TCP
       port: 3306
-  - to:
-    - namespaceSelector: {}
-    ports:
-    - protocol: TCP
-      port: 53
-    - protocol: UDP
-      port: 53
 
 ---
-# --- Bedrock Service Network Policy ---
+# Allow bedrock-service to access external AWS services
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: bedrock-service-network-policy
+  name: allow-bedrock-aws-access
   namespace: bedrock-chat
 spec:
   podSelector:
     matchLabels:
       app: bedrock-service
   policyTypes:
-  - Ingress
   - Egress
   ingress:
   - from:
@@ -127,23 +105,19 @@ spec:
     - protocol: TCP
       port: 9000
   egress:
-  # Allow external HTTPS for AWS Bedrock API
-  - to:
-    - namespaceSelector: {}
+  - to: []  # Allow all external traffic for AWS API calls
     ports:
     - protocol: TCP
-      port: 443
+      port: 443  # HTTPS for AWS APIs
     - protocol: TCP
-      port: 53
-    - protocol: UDP
-      port: 53
+      port: 80   # HTTP if needed
 
 ---
-# --- File Service Network Policy ---
+# Allow file-service database access
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: file-service-network-policy
+  name: allow-file-service-db
   namespace: bedrock-chat
 spec:
   podSelector:
@@ -168,20 +142,13 @@ spec:
     ports:
     - protocol: TCP
       port: 3306
-  - to:
-    - namespaceSelector: {}
-    ports:
-    - protocol: TCP
-      port: 53
-    - protocol: UDP
-      port: 53
 
 ---
-# --- MySQL Network Policy ---
+# Allow MySQL to accept connections from backend services
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: mysql-network-policy
+  name: allow-mysql-access
   namespace: bedrock-chat
 spec:
   podSelector:
@@ -189,23 +156,34 @@ spec:
       app: mysql
   policyTypes:
   - Ingress
-  - Egress
   ingress:
   - from:
     - podSelector:
         matchLabels:
           app: api-gateway
+  - from:
     - podSelector:
         matchLabels:
           app: file-service
     ports:
     - protocol: TCP
       port: 3306
+
+---
+# Allow DNS resolution for all pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: bedrock-chat
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
   egress:
-  - to:
-    - namespaceSelector: {}
+  - to: []
     ports:
-    - protocol: TCP
-      port: 53
     - protocol: UDP
+      port: 53
+    - protocol: TCP
       port: 53

@@ -6,7 +6,7 @@ metadata:
   labels:
     app: bedrock-service
 spec:
-  replicas: 2
+  replicas: 1  # Reduced from 2
   selector:
     matchLabels:
       app: bedrock-service
@@ -42,33 +42,33 @@ spec:
           httpGet:
             path: /health
             port: 9000
-          initialDelaySeconds: 20
+          initialDelaySeconds: 30
           periodSeconds: 10
-          timeoutSeconds: 5
+          timeoutSeconds: 10
           successThreshold: 1
-          failureThreshold: 6
+          failureThreshold: 10
         livenessProbe:
           httpGet:
             path: /health
             port: 9000
           initialDelaySeconds: 60
-          periodSeconds: 15
-          timeoutSeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 15
           successThreshold: 1
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /models
+            path: /health
             port: 9000
-          initialDelaySeconds: 30
+          initialDelaySeconds: 45
           periodSeconds: 10
-          timeoutSeconds: 5
+          timeoutSeconds: 10
           successThreshold: 1
           failureThreshold: 3
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "200m"
+            memory: "256Mi"    # Reduced from 512Mi
+            cpu: "150m"        # Reduced from 300m
           limits:
-            memory: "1Gi"
-            cpu: "1000m"
+            memory: "768Mi"      # Reduced from 2Gi
+            cpu: "500m"        # Reduced from 1500m
