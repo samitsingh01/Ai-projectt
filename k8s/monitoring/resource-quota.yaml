@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: bedrock-chat-quota
-  namespace: bedrock-chat
+  namespace: bedrock-chat-v2
 spec:
   hard:
     requests.cpu: "4"

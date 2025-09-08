@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: bedrock-chat
+  name: bedrock-chat-v2
   labels:
-    name: bedrock-chat
-    app: bedrock-chat
+    name: bedrock-chat-v2
+

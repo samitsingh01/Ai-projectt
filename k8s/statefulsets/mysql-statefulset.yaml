@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: mysql
-  namespace: bedrock-chat
+  namespace: bedrock-chat-v2
   labels:
     app: mysql
 spec:

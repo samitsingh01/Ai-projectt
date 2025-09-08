@@ -2,11 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: file-service
-  namespace: bedrock-chat
+  namespace: bedrock-chat-v2
   labels:
     app: file-service
 spec:
-  replicas: 1  # Reduced from 2
+  replicas: 1
   selector:
     matchLabels:
       app: file-service
@@ -15,62 +15,65 @@ spec:
       labels:
         app: file-service
     spec:
+      imagePullSecrets:
+        - name: docker-hub-secret
       containers:
-      - name: file-service
-        image: samitsinghhh/file-service:v2
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 7000
-          name: http
-        env:
-        - name: DATABASE_URL
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: DATABASE_URL
-        - name: UPLOAD_DIR
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: UPLOAD_DIR
-        volumeMounts:
-        - name: file-uploads
-          mountPath: /app/uploads
-        startupProbe:
-          httpGet:
-            path: /health
-            port: 7000
-          initialDelaySeconds: 15
-          periodSeconds: 5
-          timeoutSeconds: 3
-          successThreshold: 1
-          failureThreshold: 10
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 7000
-          initialDelaySeconds: 30
-          periodSeconds: 15
-          timeoutSeconds: 5
-          successThreshold: 1
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 7000
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
-          successThreshold: 1
-          failureThreshold: 3
-        resources:
-          requests:
-            memory: "128Mi"    # Reduced from 256Mi
-            cpu: "100m"        # Reduced from 200m
-          limits:
-            memory: "512Mi"    # Reduced from 1Gi
-            cpu: "500m"        # Reduced from 1000m
+        - name: file-service
+          image: samitsinghhh/file-service:v2
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 7000
+              name: http
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: DATABASE_URL
+            - name: UPLOAD_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: UPLOAD_DIR
+          volumeMounts:
+            - name: file-uploads
+              mountPath: /app/uploads
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 7000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 7000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 7000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
       volumes:
-      - name: file-uploads
-        persistentVolumeClaim:
-          claimName: file-uploads-pvc
+        - name: file-uploads
+          persistentVolumeClaim:
+            claimName: file-uploads-pvc
+

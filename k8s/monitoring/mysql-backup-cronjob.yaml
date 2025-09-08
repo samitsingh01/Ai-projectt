@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: mysql-backup
-  namespace: bedrock-chat
+  namespace: bedrock-chat-v2
 spec:
   schedule: "0 2 * * *"  # Daily at 2 AM
   jobTemplate:
@@ -35,7 +35,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: backup-pvc
-  namespace: bedrock-chat
+  namespace: bedrock-chat-v2
 spec:
   accessModes:
     - ReadWriteOnce

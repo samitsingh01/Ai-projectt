@@ -1,0 +1,43 @@
+# Namespace-wide Network Policy
+# Provides baseline connectivity rules for the bedrock-chat namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: namespace-baseline-policy
+  namespace: bedrock-chat-v2
+  labels:
+    app: bedrock-chat
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic within the namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: bedrock-chat
+  # Allow traffic from kube-system (for system components)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+  egress:
+  # Allow DNS resolution to all pods
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow communication within namespace
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: bedrock-chat
+  # Allow communication to kube-system
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system

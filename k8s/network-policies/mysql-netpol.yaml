@@ -1,0 +1,49 @@
+# MySQL Network Policy
+# Restricts database access to authorized services only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mysql-network-policy
+  namespace: bedrock-chat-v2
+  labels:
+    app: mysql
+spec:
+  podSelector:
+    matchLabels:
+      app: mysql
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow connections from API Gateway
+  - from:
+    - podSelector:
+        matchLabels:
+          app: api-gateway
+    ports:
+    - protocol: TCP
+      port: 3306
+  # Allow connections from File Service
+  - from:
+    - podSelector:
+        matchLabels:
+          app: file-service
+    ports:
+    - protocol: TCP
+      port: 3306
+  # Allow connections from backup jobs (if any)
+  - from:
+    - podSelector:
+        matchLabels:
+          job-name: mysql-backup
+    ports:
+    - protocol: TCP
+      port: 3306
+  egress:
+  # Allow DNS resolution only
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
