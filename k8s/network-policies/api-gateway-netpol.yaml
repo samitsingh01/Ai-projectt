@@ -1,12 +1,8 @@
-# API Gateway Network Policy
-# Controls traffic between frontend, backend services, and database
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: api-gateway-network-policy
   namespace: bedrock-chat-v2
-  labels:
-    app: api-gateway
 spec:
   podSelector:
     matchLabels:
@@ -15,14 +11,6 @@ spec:
   - Ingress
   - Egress
   ingress:
-  # Allow traffic from frontend
-  - from:
-    - podSelector:
-        matchLabels:
-          app: frontend
-    ports:
-    - protocol: TCP
-      port: 8000
   # Allow traffic from ingress controller
   - from:
     - namespaceSelector:

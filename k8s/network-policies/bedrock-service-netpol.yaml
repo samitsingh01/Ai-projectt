@@ -1,12 +1,8 @@
-# Bedrock Service Network Policy
-# Allows API Gateway access and external AWS API communication
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: bedrock-service-network-policy
   namespace: bedrock-chat-v2
-  labels:
-    app: bedrock-service
 spec:
   podSelector:
     matchLabels:

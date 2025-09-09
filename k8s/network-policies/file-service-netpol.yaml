@@ -1,12 +1,8 @@
-# File Service Network Policy
-# Controls access between API Gateway, file service, and database
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: file-service-network-policy
   namespace: bedrock-chat-v2
-  labels:
-    app: file-service
 spec:
   podSelector:
     matchLabels:
@@ -39,4 +35,3 @@ spec:
       port: 53
     - protocol: TCP
       port: 53
-

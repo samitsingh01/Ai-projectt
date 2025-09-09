@@ -1,12 +1,8 @@
-# Frontend Network Policy
-# Allows external ingress traffic and internal namespace communication
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: frontend-network-policy
   namespace: bedrock-chat-v2
-  labels:
-    app: frontend
 spec:
   podSelector:
     matchLabels:
@@ -28,11 +24,6 @@ spec:
     ports:
     - protocol: TCP
       port: 3000
-  # Allow traffic from within namespace
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: bedrock-chat
   egress:
   # Allow DNS resolution
   - to: []
@@ -41,8 +32,3 @@ spec:
       port: 53
     - protocol: TCP
       port: 53
-  # Allow communication within namespace
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          name: bedrock-chat

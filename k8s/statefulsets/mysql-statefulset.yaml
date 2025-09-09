@@ -42,8 +42,8 @@ spec:
               key: MYSQL_PASSWORD
         args:
         - --default-authentication-plugin=mysql_native_password
-        - --innodb-buffer-pool-size=64M      # Reduced from 128M
-        - --max-connections=50               # Reduced from 100
+        - --innodb-buffer-pool-size=64M
+        - --max-connections=50
         ports:
         - containerPort: 3306
           name: mysql
@@ -87,11 +87,11 @@ spec:
           failureThreshold: 3
         resources:
           requests:
-            memory: "256Mi"    # Reduced from 512Mi
-            cpu: "100m"        # Reduced from 200m
+            memory: "256Mi"
+            cpu: "100m"
           limits:
-            memory: "1Gi"      # Reduced from 2Gi
-            cpu: "500m"        # Reduced from 1000m
+            memory: "1Gi"
+            cpu: "500m"
       volumes:
       - name: init-script
         configMap:
@@ -101,7 +101,6 @@ spec:
       name: mysql-data
     spec:
       accessModes: ["ReadWriteOnce"]
-      storageClassName: local-path
       resources:
         requests:
           storage: 10Gi
