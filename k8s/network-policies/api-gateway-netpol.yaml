@@ -19,6 +19,14 @@ spec:
     ports:
     - protocol: TCP
       port: 8000
+  # Allow traffic from frontend
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+    ports:
+    - protocol: TCP
+      port: 8000
   # Allow external traffic for direct API access
   - from: []
     ports:

@@ -25,6 +25,14 @@ spec:
     - protocol: TCP
       port: 3000
   egress:
+  # Allow communication to API Gateway
+  - to:
+    - podSelector:
+        matchLabels:
+          app: api-gateway
+    ports:
+    - protocol: TCP
+      port: 8000
   # Allow DNS resolution
   - to: []
     ports:
