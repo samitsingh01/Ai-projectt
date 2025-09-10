@@ -10,4 +10,3 @@ data:
   AWS_REGION: "us-east-1"
   UPLOAD_DIR: "/app/uploads"
   REACT_APP_API_URL: "/api"
-

@@ -1,3 +1,5 @@
+# Quick fix MySQL StatefulSet using hostPath instead of PVC
+# This is for development/testing - not recommended for production
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -21,29 +23,19 @@ spec:
         image: mysql:8.0
         env:
         - name: MYSQL_ROOT_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: mysql-secrets
-              key: MYSQL_ROOT_PASSWORD
+          value: "root_password"
         - name: MYSQL_DATABASE
-          valueFrom:
-            secretKeyRef:
-              name: mysql-secrets
-              key: MYSQL_DATABASE
+          value: "bedrock_chat"
         - name: MYSQL_USER
-          valueFrom:
-            secretKeyRef:
-              name: mysql-secrets
-              key: MYSQL_USER
+          value: "bedrock_user"
         - name: MYSQL_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: mysql-secrets
-              key: MYSQL_PASSWORD
+          value: "bedrock_password"
         args:
         - --default-authentication-plugin=mysql_native_password
-        - --innodb-buffer-pool-size=64M
-        - --max-connections=50
+        - --innodb-buffer-pool-size=128M
+        - --max-connections=100
+        - --innodb-buffer-pool-instances=1
+        - --innodb-log-file-size=32M
         ports:
         - containerPort: 3306
           name: mysql
@@ -57,21 +49,21 @@ spec:
             command:
             - sh
             - -c
-            - 'mysqladmin ping -h localhost -u root -p"$MYSQL_ROOT_PASSWORD"'
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
+            - 'mysqladmin ping -h localhost -u root -proot_password'
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 10
           successThreshold: 1
-          failureThreshold: 15
+          failureThreshold: 20
         livenessProbe:
           exec:
             command:
             - sh
             - -c
-            - 'mysqladmin ping -h localhost -u root -p"$MYSQL_ROOT_PASSWORD"'
-          initialDelaySeconds: 60
-          periodSeconds: 20
-          timeoutSeconds: 5
+            - 'mysqladmin ping -h localhost -u root -proot_password'
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
           successThreshold: 1
           failureThreshold: 3
         readinessProbe:
@@ -79,10 +71,10 @@ spec:
             command:
             - sh
             - -c
-            - 'mysql -h localhost -u root -p"$MYSQL_ROOT_PASSWORD" -e "SELECT 1"'
-          initialDelaySeconds: 45
-          periodSeconds: 10
-          timeoutSeconds: 5
+            - 'mysql -h localhost -u root -proot_password -e "SELECT 1"'
+          initialDelaySeconds: 90
+          periodSeconds: 15
+          timeoutSeconds: 10
           successThreshold: 1
           failureThreshold: 3
         resources:
@@ -90,17 +82,13 @@ spec:
             memory: "256Mi"
             cpu: "100m"
           limits:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "512Mi"
+            cpu: "200m"
       volumes:
+      - name: mysql-data
+        hostPath:
+          path: /tmp/mysql-data
+          type: DirectoryOrCreate
       - name: init-script
         configMap:
           name: mysql-init-script
-  volumeClaimTemplates:
-  - metadata:
-      name: mysql-data
-    spec:
-      accessModes: ["ReadWriteOnce"]
-      resources:
-        requests:
-          storage: 10Gi
