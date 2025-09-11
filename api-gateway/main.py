@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+# api-gateway/main.py - Enhanced with Q&A Service Integration
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
@@ -8,14 +9,15 @@ import mysql.connector
 from mysql.connector import Error
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+import asyncio
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
-app = FastAPI(title="API Gateway", version="3.0.0")
+app = FastAPI(title="Enhanced API Gateway", version="4.0.0")
 
 # Configure CORS
 app.add_middleware(
@@ -29,12 +31,12 @@ app.add_middleware(
 # Service URLs
 BEDROCK_SERVICE_URL = os.getenv("BEDROCK_SERVICE_URL", "http://bedrock-service:9000")
 FILE_SERVICE_URL = os.getenv("FILE_SERVICE_URL", "http://file-service:7000")
+QA_SERVICE_URL = os.getenv("QA_SERVICE_URL", "http://intelligent-qa-service:6000")
 DATABASE_URL = os.getenv("DATABASE_URL", "mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat")
 
 # Database connection function
 def get_db_connection():
     try:
-        # Parse DATABASE_URL
         url_parts = DATABASE_URL.replace("mysql://", "").split("/")
         auth_host = url_parts[0].split("@")
         auth = auth_host[0].split(":")
@@ -56,127 +58,138 @@ def get_db_connection():
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    use_qa: Optional[bool] = True  # New: Enable Q&A mode
 
-class ChatResponse(BaseModel):
+class EnhancedChatResponse(BaseModel):
     response: str
     session_id: str
     model_used: str
+    response_type: str  # 'chat', 'qa', 'analysis'
+    sources: Optional[List[Dict[str, Any]]] = None
+    confidence: Optional[float] = None
+    related_questions: Optional[List[str]] = None
+    processing_time: Optional[float] = None
+
+class QARequest(BaseModel):
+    question: str
+    session_id: str
+    max_sources: Optional[int] = 5
 
 class ConversationHistory(BaseModel):
     message: str
     response: str
     created_at: str
-
-class HealthResponse(BaseModel):
-    status: str
-    service: str
+    response_type: str
+    has_sources: bool
 
 @app.get("/")
 async def root():
     """Root endpoint"""
     return {
-        "message": "API Gateway is running", 
-        "version": "3.0.0",
-        "features": ["conversation-memory", "file-upload", "bedrock-integration", "file-analysis"]
+        "message": "Enhanced API Gateway with Intelligent Q&A", 
+        "version": "4.0.0",
+        "features": ["conversation-memory", "file-upload", "bedrock-integration", 
+                    "intelligent-qa", "document-rag", "citation-tracking"]
     }
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "service": "api-gateway"}
+    return {"status": "healthy", "service": "enhanced-api-gateway"}
 
-@app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+@app.post("/chat", response_model=EnhancedChatResponse)
+async def enhanced_chat(request: ChatRequest, background_tasks: BackgroundTasks):
     """
-    Chat endpoint with conversation memory and file analysis
+    Enhanced chat endpoint with intelligent Q&A capabilities
     """
     try:
         # Generate session ID if not provided
         session_id = request.session_id or str(uuid.uuid4())
+        start_time = datetime.now()
         
-        logger.info(f"Received chat request for session: {session_id}")
-        logger.info(f"Message: {request.message[:50]}...")
+        logger.info(f"Enhanced chat request for session: {session_id}")
+        logger.info(f"Message: {request.message[:50]}... | Q&A Mode: {request.use_qa}")
         
-        # Get conversation history
-        conversation_history = get_conversation_history(session_id)
+        # Check if user has uploaded documents and wants Q&A
+        has_documents = await check_session_documents(session_id)
         
-        # Get uploaded files for this session
-        uploaded_files = []
-        try:
-            async with httpx.AsyncClient() as client:
-                files_response = await client.get(f"{FILE_SERVICE_URL}/files/{session_id}")
-                if files_response.status_code == 200:
-                    files_data = files_response.json()
-                    uploaded_files = files_data.get("files", [])
-                    logger.info(f"Found {len(uploaded_files)} files for session {session_id}")
-                else:
-                    logger.warning(f"Could not retrieve files for session {session_id}: {files_response.status_code}")
-        except Exception as e:
-            logger.error(f"Error retrieving files: {e}")
+        if request.use_qa and has_documents:
+            # Use Q&A service for document-based responses
+            logger.info("Using Q&A service for document-based response")
+            return await handle_qa_request(session_id, request.message, start_time)
+        else:
+            # Use traditional chat
+            logger.info("Using traditional chat service")
+            return await handle_traditional_chat(session_id, request.message, start_time)
+            
+    except Exception as e:
+        logger.error(f"Error in enhanced chat: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.post("/qa/ask", response_model=EnhancedChatResponse)
+async def ask_question_about_documents(request: QARequest):
+    """
+    Direct Q&A endpoint for asking questions about uploaded documents
+    """
+    try:
+        start_time = datetime.now()
         
-        # Prepare context with history and file content
-        context_message = build_context_message_with_files(
-            request.message, 
-            conversation_history, 
-            uploaded_files
-        )
-        
-        # Log the enhanced context being sent (truncated for readability)
-        logger.info(f"Enhanced prompt length: {len(context_message)} characters")
-        if uploaded_files:
-            logger.info(f"Including {len(uploaded_files)} files in context")
-        
-        # Forward to bedrock service
+        # Forward request to Q&A service
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
-                f"{BEDROCK_SERVICE_URL}/generate",
+                f"{QA_SERVICE_URL}/qa/ask",
                 json={
-                    "prompt": context_message,
-                    "max_tokens": 1000,
-                    "temperature": 0.7
+                    "question": request.question,
+                    "session_id": request.session_id,
+                    "max_sources": request.max_sources
                 }
             )
             
             if response.status_code != 200:
-                logger.error(f"Bedrock service returned status {response.status_code}")
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail="Error from bedrock service"
-                )
+                raise HTTPException(status_code=response.status_code, detail="Q&A service error")
             
-            result = response.json()
-            ai_response = result.get("response", "No response generated")
-            model_used = result.get("model_used", "unknown")
+            qa_result = response.json()
+            processing_time = (datetime.now() - start_time).total_seconds()
             
-            # Store conversation in database
-            store_conversation(session_id, request.message, ai_response, model_used)
-            
-            logger.info(f"Response generated using model: {model_used}")
-            
-            return ChatResponse(
-                response=ai_response,
-                session_id=session_id,
-                model_used=model_used
+            # Store in conversations table
+            store_enhanced_conversation(
+                session_id=request.session_id,
+                message=request.question,
+                response=qa_result["answer"],
+                model_used=qa_result.get("model_used", "qa-system"),
+                response_type="qa",
+                has_sources=len(qa_result.get("sources", [])) > 0,
+                response_time_ms=int(processing_time * 1000)
             )
             
-    except httpx.RequestError as e:
-        logger.error(f"Error connecting to bedrock service: {str(e)}")
-        raise HTTPException(status_code=503, detail="Bedrock service unavailable")
+            return EnhancedChatResponse(
+                response=qa_result["answer"],
+                session_id=request.session_id,
+                model_used="intelligent-qa-system",
+                response_type="qa",
+                sources=qa_result.get("sources", []),
+                confidence=qa_result.get("confidence"),
+                related_questions=qa_result.get("related_questions", []),
+                processing_time=processing_time
+            )
+            
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error(f"Error in Q&A request: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/upload")
 async def upload_file(
     files: List[UploadFile] = File(...),
-    session_id: str = Form(...)
+    session_id: str = Form(...),
+    background_tasks: BackgroundTasks = None
 ):
     """
-    Upload files and process them
+    Enhanced file upload with automatic Q&A processing
     """
     try:
         logger.info(f"Uploading {len(files)} files for session: {session_id}")
         
+        # Upload files via file service
         async with httpx.AsyncClient(timeout=120.0) as client:
             files_data = []
             for file in files:
@@ -191,199 +204,104 @@ async def upload_file(
             )
             
             if response.status_code != 200:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail="Error from file service"
-                )
+                raise HTTPException(status_code=response.status_code, detail="File upload error")
             
-            return response.json()
+            upload_result = response.json()
+            
+            # Process files for Q&A in background
+            if background_tasks:
+                for file_info in upload_result.get("files", []):
+                    background_tasks.add_task(
+                        process_file_for_qa,
+                        session_id,
+                        file_info["id"]
+                    )
+            
+            return {
+                **upload_result,
+                "qa_processing": "started",
+                "message": f"Uploaded {len(files)} files. Q&A processing started in background."
+            }
             
     except Exception as e:
-        logger.error(f"File upload error: {str(e)}")
+        logger.error(f"Enhanced file upload error: {str(e)}")
         raise HTTPException(status_code=500, detail="File upload failed")
 
-@app.get("/conversation/{session_id}")
-async def get_conversation(session_id: str):
+@app.get("/qa/status/{session_id}")
+async def get_qa_processing_status(session_id: str):
     """
-    Get conversation history for a session
+    Get Q&A processing status for session documents
     """
     try:
-        history = get_conversation_history(session_id)
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{QA_SERVICE_URL}/documents/{session_id}/status")
+            return response.json()
+    except Exception as e:
+        logger.error(f"Error getting Q&A status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get Q&A status")
+
+@app.get("/conversation/{session_id}")
+async def get_enhanced_conversation(session_id: str):
+    """
+    Get enhanced conversation history with Q&A metadata
+    """
+    try:
+        history = get_enhanced_conversation_history(session_id)
         return {"session_id": session_id, "history": history}
     except Exception as e:
         logger.error(f"Error retrieving conversation: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve conversation")
 
-@app.get("/files/{session_id}")
-async def get_uploaded_files(session_id: str):
+@app.get("/analytics/{session_id}")
+async def get_session_analytics(session_id: str):
     """
-    Get uploaded files for a session
+    Get comprehensive session analytics
     """
     try:
+        # Get analytics from Q&A service
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{FILE_SERVICE_URL}/files/{session_id}")
-            return response.json()
-    except Exception as e:
-        logger.error(f"Error retrieving files: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve files")
-
-@app.delete("/conversation/{session_id}")
-async def clear_conversation(session_id: str):
-    """
-    Clear conversation history for a session
-    """
-    try:
-        connection = get_db_connection()
-        if not connection:
-            raise HTTPException(status_code=500, detail="Database connection failed")
+            qa_response = await client.get(f"{QA_SERVICE_URL}/analytics/{session_id}")
+            qa_analytics = qa_response.json() if qa_response.status_code == 200 else {}
         
-        cursor = connection.cursor()
-        cursor.execute("DELETE FROM conversations WHERE session_id = %s", (session_id,))
-        connection.commit()
+        # Get basic conversation stats
+        conversation_stats = get_conversation_stats(session_id)
         
-        cursor.close()
-        connection.close()
-        
-        return {"message": "Conversation cleared successfully"}
-    except Exception as e:
-        logger.error(f"Error clearing conversation: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to clear conversation")
-
-def get_conversation_history(session_id: str) -> List[ConversationHistory]:
-    """
-    Get conversation history from database
-    """
-    try:
-        connection = get_db_connection()
-        if not connection:
-            return []
-        
-        cursor = connection.cursor()
-        cursor.execute("""
-            SELECT message, response, created_at 
-            FROM conversations 
-            WHERE session_id = %s 
-            ORDER BY created_at ASC 
-            LIMIT 10
-        """, (session_id,))
-        
-        results = cursor.fetchall()
-        cursor.close()
-        connection.close()
-        
-        return [
-            ConversationHistory(
-                message=row[0],
-                response=row[1],
-                created_at=row[2].isoformat()
-            ) for row in results
-        ]
+        return {
+            "session_id": session_id,
+            "conversation_analytics": conversation_stats,
+            **qa_analytics
+        }
         
     except Exception as e:
-        logger.error(f"Error getting conversation history: {str(e)}")
-        return []
-
-def store_conversation(session_id: str, message: str, response: str, model_used: str):
-    """
-    Store conversation in database
-    """
-    try:
-        connection = get_db_connection()
-        if not connection:
-            return
-        
-        cursor = connection.cursor()
-        cursor.execute("""
-            INSERT INTO conversations (session_id, message, response, model_used) 
-            VALUES (%s, %s, %s, %s)
-        """, (session_id, message, response, model_used))
-        
-        connection.commit()
-        cursor.close()
-        connection.close()
-        
-    except Exception as e:
-        logger.error(f"Error storing conversation: {str(e)}")
-
-def build_context_message_with_files(current_message: str, history: List[ConversationHistory], files: list) -> str:
-    """
-    Build context message with conversation history and file content
-    """
-    context_parts = []
-    
-    # Add conversation history
-    if history:
-        context_parts.append("Previous conversation context:")
-        for conv in history[-5:]:  # Last 5 conversations for context
-            context_parts.append(f"User: {conv.message}")
-            context_parts.append(f"Assistant: {conv.response}")
-        context_parts.append("")  # Empty line for separation
-    
-    # Add uploaded files content
-    if files:
-        context_parts.append("Uploaded files for analysis:")
-        for file_info in files:
-            filename = file_info.get('filename', 'Unknown file')
-            content = file_info.get('content', 'No content available')
-            file_type = file_info.get('content_type', 'Unknown type')
-            file_size = len(content) if content else 0
-            
-            context_parts.append(f"\n=== FILE: {filename} (Type: {file_type}, Size: {file_size} characters) ===")
-            
-            # Truncate very large files to prevent token limit issues
-            if len(content) > 10000:
-                context_parts.append(content[:10000] + "\n...[FILE TRUNCATED DUE TO LENGTH]...")
-            else:
-                context_parts.append(content)
-            
-            context_parts.append("=== END OF FILE ===\n")
-        
-        context_parts.append("")  # Empty line for separation
-    
-    # Add current message
-    context_parts.append(f"Current question: {current_message}")
-    
-    final_context = "\n".join(context_parts)
-    
-    # Log context details for debugging
-    logger.info(f"Context includes: {len(history)} history items, {len(files)} files")
-    
-    return final_context
-
-# Legacy function kept for backwards compatibility - remove if not needed elsewhere
-def build_context_message(current_message: str, history: List[ConversationHistory]) -> str:
-    """
-    Legacy function - use build_context_message_with_files instead
-    """
-    return build_context_message_with_files(current_message, history, [])
+        logger.error(f"Error getting analytics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get analytics")
 
 @app.get("/services/status")
-async def services_status():
-    """Check the status of all backend services"""
+async def enhanced_services_status():
+    """Check the status of all services including Q&A"""
     services = {
         "api-gateway": "healthy",
         "bedrock-service": "unknown",
         "file-service": "unknown",
+        "intelligent-qa-service": "unknown",
         "database": "unknown"
     }
     
-    # Check bedrock service
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{BEDROCK_SERVICE_URL}/health")
-            if response.status_code == 200:
-                services["bedrock-service"] = "healthy"
-    except:
-        services["bedrock-service"] = "unreachable"
+    # Check all services
+    service_checks = [
+        (BEDROCK_SERVICE_URL, "bedrock-service"),
+        (FILE_SERVICE_URL, "file-service"),
+        (QA_SERVICE_URL, "intelligent-qa-service")
+    ]
     
-    # Check file service
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{FILE_SERVICE_URL}/health")
-            if response.status_code == 200:
-                services["file-service"] = "healthy"
-    except:
-        services["file-service"] = "unreachable"
+    for service_url, service_name in service_checks:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{service_url}/health")
+                if response.status_code == 200:
+                    services[service_name] = "healthy"
+        except:
+            services[service_name] = "unreachable"
     
     # Check database
     try:
@@ -395,6 +313,262 @@ async def services_status():
         services["database"] = "unreachable"
     
     return {"services": services}
+
+# Helper functions
+async def check_session_documents(session_id: str) -> bool:
+    """Check if session has uploaded documents"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{FILE_SERVICE_URL}/files/{session_id}")
+            if response.status_code == 200:
+                files_data = response.json()
+                return len(files_data.get("files", [])) > 0
+    except:
+        pass
+    return False
+
+async def handle_qa_request(session_id: str, message: str, start_time: datetime) -> EnhancedChatResponse:
+    """Handle request using Q&A service"""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{QA_SERVICE_URL}/qa/ask",
+                json={
+                    "question": message,
+                    "session_id": session_id,
+                    "max_sources": 5
+                }
+            )
+            
+            if response.status_code == 200:
+                qa_result = response.json()
+                processing_time = (datetime.now() - start_time).total_seconds()
+                
+                # Store conversation
+                store_enhanced_conversation(
+                    session_id=session_id,
+                    message=message,
+                    response=qa_result["answer"],
+                    model_used="intelligent-qa-system",
+                    response_type="qa",
+                    has_sources=len(qa_result.get("sources", [])) > 0,
+                    response_time_ms=int(processing_time * 1000)
+                )
+                
+                return EnhancedChatResponse(
+                    response=qa_result["answer"],
+                    session_id=session_id,
+                    model_used="intelligent-qa-system",
+                    response_type="qa",
+                    sources=qa_result.get("sources", []),
+                    confidence=qa_result.get("confidence"),
+                    related_questions=qa_result.get("related_questions", []),
+                    processing_time=processing_time
+                )
+        
+        # Fallback to traditional chat if Q&A fails
+        logger.warning("Q&A service failed, falling back to traditional chat")
+        return await handle_traditional_chat(session_id, message, start_time)
+        
+    except Exception as e:
+        logger.error(f"Q&A request failed: {e}")
+        return await handle_traditional_chat(session_id, message, start_time)
+
+async def handle_traditional_chat(session_id: str, message: str, start_time: datetime) -> EnhancedChatResponse:
+    """Handle request using traditional chat"""
+    try:
+        # Get conversation history
+        conversation_history = get_enhanced_conversation_history(session_id)
+        
+        # Get uploaded files for context
+        uploaded_files = []
+        try:
+            async with httpx.AsyncClient() as client:
+                files_response = await client.get(f"{FILE_SERVICE_URL}/files/{session_id}")
+                if files_response.status_code == 200:
+                    files_data = files_response.json()
+                    uploaded_files = files_data.get("files", [])
+        except Exception as e:
+            logger.error(f"Error retrieving files: {e}")
+        
+        # Build context
+        context_message = build_enhanced_context_message(message, conversation_history, uploaded_files)
+        
+        # Call Bedrock service
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{BEDROCK_SERVICE_URL}/generate",
+                json={
+                    "prompt": context_message,
+                    "max_tokens": 1000,
+                    "temperature": 0.7
+                }
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail="Bedrock service error")
+            
+            result = response.json()
+            processing_time = (datetime.now() - start_time).total_seconds()
+            
+            # Store conversation
+            store_enhanced_conversation(
+                session_id=session_id,
+                message=message,
+                response=result["response"],
+                model_used=result.get("model_used", "unknown"),
+                response_type="chat",
+                has_sources=len(uploaded_files) > 0,
+                response_time_ms=int(processing_time * 1000)
+            )
+            
+            return EnhancedChatResponse(
+                response=result["response"],
+                session_id=session_id,
+                model_used=result.get("model_used", "unknown"),
+                response_type="chat",
+                processing_time=processing_time
+            )
+            
+    except Exception as e:
+        logger.error(f"Traditional chat failed: {e}")
+        raise HTTPException(status_code=500, detail="Chat service failed")
+
+async def process_file_for_qa(session_id: str, file_id: int):
+    """Background task to process file for Q&A"""
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            await client.post(
+                f"{QA_SERVICE_URL}/documents/process",
+                json={
+                    "session_id": session_id,
+                    "file_id": file_id,
+                    "force_reprocess": False
+                }
+            )
+        logger.info(f"Started Q&A processing for file {file_id}")
+    except Exception as e:
+        logger.error(f"Error processing file {file_id} for Q&A: {e}")
+
+def store_enhanced_conversation(session_id: str, message: str, response: str, 
+                              model_used: str, response_type: str, has_sources: bool, 
+                              response_time_ms: int):
+    """Store enhanced conversation with metadata"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return
+        
+        cursor = connection.cursor()
+        cursor.execute("""
+            INSERT INTO conversations 
+            (session_id, message, response, model_used, conversation_type, has_sources, response_time_ms) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (session_id, message, response, model_used, response_type, has_sources, response_time_ms))
+        
+        connection.commit()
+        cursor.close()
+        connection.close()
+        
+    except Exception as e:
+        logger.error(f"Error storing enhanced conversation: {str(e)}")
+
+def get_enhanced_conversation_history(session_id: str) -> List[ConversationHistory]:
+    """Get enhanced conversation history"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return []
+        
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT message, response, created_at, conversation_type, has_sources
+            FROM conversations 
+            WHERE session_id = %s 
+            ORDER BY created_at ASC 
+            LIMIT 20
+        """, (session_id,))
+        
+        results = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        
+        return [
+            ConversationHistory(
+                message=row[0],
+                response=row[1],
+                created_at=row[2].isoformat(),
+                response_type=row[3] or "chat",
+                has_sources=bool(row[4])
+            ) for row in results
+        ]
+        
+    except Exception as e:
+        logger.error(f"Error getting enhanced conversation history: {str(e)}")
+        return []
+
+def get_conversation_stats(session_id: str) -> Dict:
+    """Get conversation statistics"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return {}
+        
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_messages,
+                COUNT(CASE WHEN conversation_type = 'qa' THEN 1 END) as qa_messages,
+                COUNT(CASE WHEN conversation_type = 'chat' THEN 1 END) as chat_messages,
+                AVG(response_time_ms) as avg_response_time,
+                MAX(created_at) as last_activity
+            FROM conversations 
+            WHERE session_id = %s
+        """, (session_id,))
+        
+        result = cursor.fetchone()
+        cursor.close()
+        connection.close()
+        
+        if result:
+            return {
+                "total_messages": result[0] or 0,
+                "qa_messages": result[1] or 0,
+                "chat_messages": result[2] or 0,
+                "avg_response_time_ms": float(result[3]) if result[3] else 0.0,
+                "last_activity": result[4].isoformat() if result[4] else None
+            }
+        return {}
+        
+    except Exception as e:
+        logger.error(f"Error getting conversation stats: {e}")
+        return {}
+
+def build_enhanced_context_message(current_message: str, history: List[ConversationHistory], files: list) -> str:
+    """Build enhanced context message"""
+    context_parts = []
+    
+    # Add conversation history
+    if history:
+        context_parts.append("Previous conversation context:")
+        for conv in history[-5:]:
+            context_parts.append(f"User: {conv.message}")
+            context_parts.append(f"Assistant ({conv.response_type}): {conv.response}")
+        context_parts.append("")
+    
+    # Add file information
+    if files:
+        context_parts.append("Available documents for reference:")
+        for file_info in files:
+            filename = file_info.get('filename', 'Unknown file')
+            has_text = file_info.get('has_text', False)
+            context_parts.append(f"- {filename} {'(processed)' if has_text else '(raw)'}")
+        context_parts.append("Note: For detailed document analysis, use Q&A mode.\n")
+    
+    # Add current message
+    context_parts.append(f"Current question: {current_message}")
+    
+    return "\n".join(context_parts)
 
 if __name__ == "__main__":
     import uvicorn

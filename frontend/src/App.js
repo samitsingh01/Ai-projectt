@@ -1,3 +1,4 @@
+// frontend/src/App.js - Enhanced with Q&A Features
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './App.css';
@@ -10,6 +11,11 @@ function App() {
   const [files, setFiles] = useState([]);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [dragOver, setDragOver] = useState(false);
+  const [qaMode, setQaMode] = useState(true); // New: Q&A mode toggle
+  const [qaStatus, setQaStatus] = useState(null); // New: Q&A processing status
+  const [relatedQuestions, setRelatedQuestions] = useState([]); // New: Related questions
+  const [showAnalytics, setShowAnalytics] = useState(false); // New: Analytics panel
+  const [analytics, setAnalytics] = useState(null); // New: Session analytics
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
@@ -19,11 +25,23 @@ function App() {
     setSessionId(newSessionId);
     loadConversationHistory(newSessionId);
     loadUploadedFiles(newSessionId);
+    loadQAStatus(newSessionId);
   }, []);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    // Check Q&A status periodically when files are being processed
+    if (qaStatus && !qaStatus.processing_complete && sessionId) {
+      const interval = setInterval(() => {
+        loadQAStatus(sessionId);
+      }, 5000); // Check every 5 seconds
+      
+      return () => clearInterval(interval);
+    }
+  }, [qaStatus, sessionId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -43,7 +61,9 @@ function App() {
           formattedMessages.push({
             type: 'assistant',
             content: item.response,
-            timestamp: item.created_at
+            timestamp: item.created_at,
+            responseType: item.response_type || 'chat',
+            hasSources: item.has_sources || false
           });
         });
         setMessages(formattedMessages);
@@ -59,6 +79,29 @@ function App() {
       setUploadedFiles(response.data.files || []);
     } catch (error) {
       console.error('Error loading uploaded files:', error);
+    }
+  };
+
+  const loadQAStatus = async (sessionId) => {
+    try {
+      const response = await axios.get(`/api/qa/status/${sessionId}`);
+      setQaStatus(response.data);
+      
+      // Auto-enable Q&A mode when documents are processed
+      if (response.data.processing_complete && response.data.processed_documents > 0) {
+        setQaMode(true);
+      }
+    } catch (error) {
+      console.error('Error loading Q&A status:', error);
+    }
+  };
+
+  const loadAnalytics = async () => {
+    try {
+      const response = await axios.get(`/api/analytics/${sessionId}`);
+      setAnalytics(response.data);
+    } catch (error) {
+      console.error('Error loading analytics:', error);
     }
   };
 
@@ -83,19 +126,31 @@ function App() {
         await uploadFiles();
       }
 
-      // Send chat message
+      // Send chat message with Q&A mode
       const result = await axios.post('/api/chat', {
         message: message || 'Please analyze the uploaded files and tell me about their content.',
-        session_id: sessionId
+        session_id: sessionId,
+        use_qa: qaMode && uploadedFiles.length > 0
       });
 
       // Add assistant response to chat
-      setMessages(prev => [...prev, {
+      const newMessage = {
         type: 'assistant',
         content: result.data.response,
         timestamp: new Date().toISOString(),
-        modelUsed: result.data.model_used
-      }]);
+        modelUsed: result.data.model_used,
+        responseType: result.data.response_type,
+        sources: result.data.sources,
+        confidence: result.data.confidence,
+        processingTime: result.data.processing_time
+      };
+
+      setMessages(prev => [...prev, newMessage]);
+
+      // Set related questions if provided
+      if (result.data.related_questions) {
+        setRelatedQuestions(result.data.related_questions);
+      }
 
     } catch (error) {
       setMessages(prev => [...prev, {
@@ -109,6 +164,11 @@ function App() {
       setFiles([]);
       setLoading(false);
     }
+  };
+
+  const handleQuestionClick = (question) => {
+    setMessage(question);
+    setRelatedQuestions([]);
   };
 
   const uploadFiles = async () => {
@@ -125,13 +185,14 @@ function App() {
         },
       });
 
-      // Refresh uploaded files list
+      // Refresh uploaded files list and Q&A status
       loadUploadedFiles(sessionId);
+      loadQAStatus(sessionId);
       
       // Add upload confirmation to chat
       setMessages(prev => [...prev, {
         type: 'system',
-        content: `✅ Successfully uploaded ${files.length} file(s): ${files.map(f => f.name).join(', ')}`,
+        content: `✅ Successfully uploaded ${files.length} file(s): ${files.map(f => f.name).join(', ')}. Q&A processing started.`,
         timestamp: new Date().toISOString()
       }]);
 
@@ -196,26 +257,104 @@ function App() {
       try {
         await axios.delete(`/api/conversation/${sessionId}`);
         setMessages([]);
+        setRelatedQuestions([]);
       } catch (error) {
         console.error('Error clearing conversation:', error);
       }
     }
   };
 
+  const toggleAnalytics = () => {
+    if (!showAnalytics) {
+      loadAnalytics();
+    }
+    setShowAnalytics(!showAnalytics);
+  };
+
   const formatTimestamp = (timestamp) => {
     return new Date(timestamp).toLocaleTimeString();
+  };
+
+  const getResponseTypeIcon = (responseType) => {
+    switch (responseType) {
+      case 'qa': return '🧠';
+      case 'analysis': return '📊';
+      default: return '💬';
+    }
   };
 
   return (
     <div className="App">
       <header className="App-header">
         <div className="chat-header">
-          <h1>🤖 AI Chat with File Analysis</h1>
-          <div className="session-info">
-            <span>Session: {sessionId.slice(-8)}</span>
-            <button onClick={clearConversation} className="clear-btn">Clear Chat</button>
+          <h1>🤖 AI Chat with Intelligent Q&A</h1>
+          <div className="header-controls">
+            <div className="qa-toggle">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={qaMode}
+                  onChange={(e) => setQaMode(e.target.checked)}
+                  disabled={uploadedFiles.length === 0}
+                />
+                Q&A Mode {uploadedFiles.length === 0 && '(Upload documents first)'}
+              </label>
+            </div>
+            <div className="session-info">
+              <span>Session: {sessionId.slice(-8)}</span>
+              <button onClick={toggleAnalytics} className="analytics-btn">
+                📊 Analytics
+              </button>
+              <button onClick={clearConversation} className="clear-btn">Clear Chat</button>
+            </div>
           </div>
         </div>
+
+        {/* Q&A Status Bar */}
+        {qaStatus && (
+          <div className="qa-status-bar">
+            <div className="status-info">
+              📄 Documents: {qaStatus.processed_documents}/{qaStatus.total_documents}
+              {qaStatus.processing_complete ? 
+                <span className="status-ready"> ✅ Ready for Q&A</span> : 
+                <span className="status-processing"> ⏳ Processing...</span>
+              }
+              {qaStatus.readiness_percentage > 0 && (
+                <div className="progress-bar">
+                  <div 
+                    className="progress-fill" 
+                    style={{width: `${qaStatus.readiness_percentage}%`}}
+                  ></div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Analytics Panel */}
+        {showAnalytics && analytics && (
+          <div className="analytics-panel">
+            <h3>📊 Session Analytics</h3>
+            <div className="analytics-grid">
+              <div className="stat-card">
+                <h4>Conversations</h4>
+                <p>Total: {analytics.conversation_analytics?.total_messages || 0}</p>
+                <p>Q&A: {analytics.conversation_analytics?.qa_messages || 0}</p>
+                <p>Chat: {analytics.conversation_analytics?.chat_messages || 0}</p>
+              </div>
+              <div className="stat-card">
+                <h4>Documents</h4>
+                <p>Processed: {analytics.document_analytics?.documents_processed || 0}</p>
+                <p>Chunks: {analytics.document_analytics?.total_chunks || 0}</p>
+              </div>
+              <div className="stat-card">
+                <h4>Performance</h4>
+                <p>Avg Response: {Math.round(analytics.conversation_analytics?.avg_response_time_ms || 0)}ms</p>
+                <p>Avg Confidence: {Math.round((analytics.qa_analytics?.avg_confidence || 0) * 100)}%</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="chat-container">
           <div className="chat-messages">
@@ -223,13 +362,62 @@ function App() {
               <div key={index} className={`message ${msg.type}`}>
                 <div className="message-content">
                   <div className="message-text">{msg.content}</div>
+                  
+                  {/* Sources for Q&A responses */}
+                  {msg.sources && msg.sources.length > 0 && (
+                    <div className="sources-section">
+                      <h4>📚 Sources:</h4>
+                      {msg.sources.map((source, idx) => (
+                        <div key={idx} className="source-item">
+                          <strong>{source.document}</strong> (p. {source.page})
+                          <div className="source-snippet">"{source.snippet}"</div>
+                          <div className="source-meta">
+                            Relevance: {Math.round(source.relevance_score * 100)}%
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
                   <div className="message-meta">
                     <span className="timestamp">{formatTimestamp(msg.timestamp)}</span>
+                    {msg.responseType && (
+                      <span className="response-type">
+                        {getResponseTypeIcon(msg.responseType)} {msg.responseType}
+                      </span>
+                    )}
+                    {msg.confidence && (
+                      <span className="confidence">
+                        Confidence: {Math.round(msg.confidence * 100)}%
+                      </span>
+                    )}
                     {msg.modelUsed && <span className="model">via {msg.modelUsed}</span>}
+                    {msg.processingTime && (
+                      <span className="processing-time">
+                        {msg.processingTime.toFixed(2)}s
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
             ))}
+            
+            {/* Related Questions */}
+            {relatedQuestions.length > 0 && (
+              <div className="related-questions">
+                <h4>💡 Related Questions:</h4>
+                {relatedQuestions.map((question, idx) => (
+                  <button
+                    key={idx}
+                    className="related-question-btn"
+                    onClick={() => handleQuestionClick(question)}
+                  >
+                    {question}
+                  </button>
+                ))}
+              </div>
+            )}
+            
             {loading && (
               <div className="message assistant">
                 <div className="message-content">
@@ -251,7 +439,7 @@ function App() {
                 <div className="file-list">
                   {uploadedFiles.map((file, index) => (
                     <span key={index} className="uploaded-file-tag">
-                      {file.original_name} ({(file.file_size / 1024).toFixed(1)}KB)
+                      {file.filename} ({(file.file_size / 1024).toFixed(1)}KB)
                       {file.has_text && <span className="text-indicator">📄</span>}
                     </span>
                   ))}
@@ -285,6 +473,7 @@ function App() {
                 <span className="drop-icon">📁</span>
                 <p>Drop files here or click to select</p>
                 <p className="file-info">Supported: PDF, TXT, DOCX, CSV, JSON, MD (max 10MB each)</p>
+                {qaMode && <p className="qa-info">Q&A Mode: Files will be processed for intelligent questioning</p>}
               </div>
               <input
                 ref={fileInputRef}
@@ -302,7 +491,11 @@ function App() {
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Ask me anything about your files or general questions..."
+                placeholder={
+                  qaMode && uploadedFiles.length > 0 
+                    ? "Ask me anything about your uploaded documents..." 
+                    : "Ask me anything or upload documents for intelligent Q&A..."
+                }
                 rows="3"
                 disabled={loading}
                 onKeyDown={(e) => {
@@ -313,11 +506,14 @@ function App() {
                 }}
               />
               <button type="submit" disabled={loading} className="send-btn">
-                {loading ? '⏳' : '🚀'}
+                {loading ? '⏳' : qaMode && uploadedFiles.length > 0 ? '🧠' : '🚀'}
               </button>
             </div>
             <div className="form-help">
-              <span>Press Enter to send, Shift+Enter for new line</span>
+              <span>
+                Press Enter to send, Shift+Enter for new line | 
+                {qaMode && uploadedFiles.length > 0 ? ' Q&A Mode Active' : ' Chat Mode'}
+              </span>
             </div>
           </form>
         </div>

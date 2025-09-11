@@ -1,3 +1,4 @@
+/* frontend/src/App.css - Enhanced with Q&A Features */
 .App {
   text-align: center;
   min-height: 100vh;
@@ -20,13 +21,41 @@
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  max-width: 800px;
+  max-width: 900px;
   margin-bottom: 20px;
 }
 
 .chat-header h1 {
   font-size: 2rem;
   margin: 0;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.qa-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 8px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.qa-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.qa-toggle input[type="checkbox"] {
+  transform: scale(1.2);
 }
 
 .session-info {
@@ -37,7 +66,7 @@
   opacity: 0.8;
 }
 
-.clear-btn {
+.analytics-btn, .clear-btn {
   background: rgba(255, 255, 255, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.3);
   color: white;
@@ -48,8 +77,91 @@
   transition: all 0.3s;
 }
 
-.clear-btn:hover {
+.analytics-btn:hover, .clear-btn:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+/* Q&A Status Bar */
+.qa-status-bar {
+  width: 100%;
+  max-width: 900px;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 10px 15px;
+  border-radius: 10px;
+  margin-bottom: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.status-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  font-size: 0.9rem;
+}
+
+.status-ready {
+  color: #4CAF50;
+  font-weight: bold;
+}
+
+.status-processing {
+  color: #FF9800;
+  font-weight: bold;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #8BC34A);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* Analytics Panel */
+.analytics-panel {
+  width: 100%;
+  max-width: 900px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 15px;
+  padding: 20px;
+  margin-bottom: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.analytics-panel h3 {
+  margin: 0 0 15px 0;
+  color: white;
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.stat-card {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 15px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.stat-card h4 {
+  margin: 0 0 10px 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.stat-card p {
+  margin: 5px 0;
+  font-size: 0.8rem;
 }
 
 .chat-container {
@@ -60,7 +172,7 @@
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.18);
   width: 100%;
-  max-width: 800px;
+  max-width: 900px;
   height: 70vh;
   display: flex;
   flex-direction: column;
@@ -101,7 +213,7 @@
 }
 
 .message-content {
-  max-width: 70%;
+  max-width: 80%;
   padding: 12px 16px;
   border-radius: 18px;
   text-align: left;
@@ -135,13 +247,105 @@
   white-space: pre-wrap;
 }
 
+/* Sources Section */
+.sources-section {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.sources-section h4 {
+  margin: 0 0 10px 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.source-item {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 10px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  border-left: 3px solid #4CAF50;
+}
+
+.source-snippet {
+  font-style: italic;
+  margin: 5px 0;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.85rem;
+}
+
+.source-meta {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 5px;
+}
+
+/* Related Questions */
+.related-questions {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 15px;
+  border-radius: 12px;
+  margin: 15px 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.related-questions h4 {
+  margin: 0 0 10px 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.related-question-btn {
+  display: block;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.85rem;
+  transition: all 0.3s;
+}
+
+.related-question-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateX(5px);
+}
+
 .message-meta {
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: 0.7rem;
   opacity: 0.7;
-  margin-top: 5px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.response-type {
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 0.65rem;
+}
+
+.confidence {
+  background: rgba(76, 175, 80, 0.3);
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 0.65rem;
+}
+
+.processing-time {
+  background: rgba(33, 150, 243, 0.3);
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 0.65rem;
 }
 
 .typing-indicator {
@@ -273,6 +477,11 @@
   font-size: 0.9rem;
 }
 
+.qa-info {
+  color: #4CAF50 !important;
+  font-weight: bold;
+}
+
 .file-info {
   font-size: 0.7rem !important;
   opacity: 0.7;
@@ -333,6 +542,33 @@
   color: rgba(255, 255, 255, 0.6);
 }
 
+/* Enhanced hover effects */
+.source-item:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateX(2px);
+}
+
+.uploaded-file-tag:hover {
+  background: rgba(76, 175, 80, 0.5);
+  transform: scale(1.05);
+}
+
+/* Animation for new messages */
+.message {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
   .App-header {
@@ -341,8 +577,23 @@
   
   .chat-header {
     flex-direction: column;
-    gap: 10px;
+    gap: 15px;
     text-align: center;
+  }
+  
+  .header-controls {
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+  }
+  
+  .qa-toggle {
+    justify-content: center;
+  }
+  
+  .session-info {
+    justify-content: center;
+    flex-wrap: wrap;
   }
   
   .chat-header h1 {
@@ -350,19 +601,82 @@
   }
   
   .chat-container {
-    height: 80vh;
+    height: 75vh;
     padding: 15px;
+    max-width: 95vw;
   }
   
   .message-content {
-    max-width: 85%;
+    max-width: 90%;
   }
   
   .input-container {
     flex-direction: column;
+    gap: 10px;
   }
   
   .send-btn {
     align-self: center;
   }
+  
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .message-meta {
+    justify-content: center;
+    text-align: center;
+  }
+  
+  .qa-status-bar {
+    max-width: 95vw;
+  }
+  
+  .status-info {
+    flex-direction: column;
+    gap: 8px;
+    text-align: center;
+  }
+}
+
+/* Dark mode enhancements for better contrast */
+.message.assistant .message-content {
+  background: rgba(20, 20, 30, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sources-section {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+/* Loading state improvements */
+.send-btn:disabled {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Accessibility improvements */
+.qa-toggle label:focus-within {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+}
+
+.related-question-btn:focus {
+  outline: 2px solid rgba(76, 175, 80, 0.7);
+  outline-offset: 2px;
+}
+
+.send-btn:focus {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 2px;
 }

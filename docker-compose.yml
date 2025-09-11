@@ -17,7 +17,7 @@ services:
       - api-gateway
     restart: unless-stopped
 
-  # API Gateway - Python FastAPI
+  # API Gateway - Enhanced Python FastAPI
   api-gateway:
     build:
       context: ./api-gateway
@@ -25,6 +25,28 @@ services:
     container_name: api-gateway
     ports:
       - "8000:8000"
+    environment:
+      - DATABASE_URL=mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat
+      - BEDROCK_SERVICE_URL=http://bedrock-service:9000
+      - FILE_SERVICE_URL=http://file-service:7000
+      - QA_SERVICE_URL=http://intelligent-qa-service:6000
+    networks:
+      - bedrock-network
+    depends_on:
+      - mysql
+      - bedrock-service
+      - file-service
+      - intelligent-qa-service
+    restart: unless-stopped
+
+  # NEW: Intelligent Q&A Service
+  intelligent-qa-service:
+    build:
+      context: ./intelligent-qa-service
+      dockerfile: Dockerfile
+    container_name: intelligent-qa-service
+    ports:
+      - "6000:6000"
     environment:
       - DATABASE_URL=mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat
       - BEDROCK_SERVICE_URL=http://bedrock-service:9000
@@ -48,6 +70,7 @@ services:
     environment:
       - DATABASE_URL=mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat
       - UPLOAD_DIR=/app/uploads
+      - QA_SERVICE_URL=http://intelligent-qa-service:6000
     volumes:
       - file-uploads:/app/uploads
     networks:
@@ -56,7 +79,7 @@ services:
       - mysql
     restart: unless-stopped
 
-  # MySQL Database
+  # MySQL Database with Enhanced Schema
   mysql:
     image: mysql:8.0
     container_name: mysql
@@ -69,13 +92,13 @@ services:
       - MYSQL_PASSWORD=bedrock_password
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./database/enhanced_init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - bedrock-network
     restart: unless-stopped
     command: --default-authentication-plugin=mysql_native_password
 
-  # Bedrock Service - Go Application
+  # Bedrock Service - Enhanced Go Application
   bedrock-service:
     build:
       context: ./bedrock-service
