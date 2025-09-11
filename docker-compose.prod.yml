@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=root_password
+      - MYSQL_DATABASE=bedrock_chat
+      - MYSQL_USER=bedrock_user
+      - MYSQL_PASSWORD=bedrock_password
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - bedrock-network
+    restart: unless-stopped
+
+  bedrock-service:
+    image: samitsinghhh/bedrock-service:latest
+    container_name: bedrock-service
+    ports:
+      - "9000:9000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+    networks:
+      - bedrock-network
+    restart: unless-stopped
+
+  file-service:
+    image: samitsinghhh/file-service:latest
+    container_name: file-service
+    ports:
+      - "7000:7000"
+    environment:
+      - DATABASE_URL=mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat
+    volumes:
+      - file-uploads:/app/uploads
+    networks:
+      - bedrock-network
+    depends_on:
+      - mysql
+    restart: unless-stopped
+
+  intelligent-qa-service:
+    image: samitsinghhh/intelligent-qa-service:latest
+    container_name: intelligent-qa-service
+    ports:
+      - "6000:6000"
+    environment:
+      - DATABASE_URL=mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat
+      - BEDROCK_SERVICE_URL=http://bedrock-service:9000
+      - FILE_SERVICE_URL=http://file-service:7000
+    networks:
+      - bedrock-network
+    depends_on:
+      - mysql
+      - bedrock-service
+      - file-service
+    restart: unless-stopped
+
+  api-gateway:
+    image: samitsinghhh/api-gateway:latest
+    container_name: api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat
+      - BEDROCK_SERVICE_URL=http://bedrock-service:9000
+      - FILE_SERVICE_URL=http://file-service:7000
+      - QA_SERVICE_URL=http://intelligent-qa-service:6000
+    networks:
+      - bedrock-network
+    depends_on:
+      - mysql
+      - bedrock-service
+      - file-service
+      - intelligent-qa-service
+    restart: unless-stopped
+
+  frontend:
+    image: samitsinghhh/frontend:latest
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    networks:
+      - bedrock-network
+    depends_on:
+      - api-gateway
+    restart: unless-stopped
+
+networks:
+  bedrock-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
+    driver: local
+  file-uploads:
+    driver: local
