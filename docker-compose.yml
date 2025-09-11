@@ -1,65 +1,50 @@
 version: '3.8'
 
 services:
-  # Frontend Service - React Application
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: frontend
+  # MySQL Database - Start first
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
     ports:
-      - "3000:3000"
+      - "3306:3306"
     environment:
-      - REACT_APP_API_URL=http://api-gateway:8000
+      - MYSQL_ROOT_PASSWORD=root_password
+      - MYSQL_DATABASE=bedrock_chat
+      - MYSQL_USER=bedrock_user
+      - MYSQL_PASSWORD=bedrock_password
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - bedrock-network
-    depends_on:
-      - api-gateway
     restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 5s
+      retries: 10
 
-  # API Gateway - Enhanced Python FastAPI
-  api-gateway:
+  # Bedrock Service - AI Service
+  bedrock-service:
     build:
-      context: ./api-gateway
+      context: ./bedrock-service
       dockerfile: Dockerfile
-    container_name: api-gateway
+    container_name: bedrock-service
     ports:
-      - "8000:8000"
+      - "9000:9000"
     environment:
-      - DATABASE_URL=mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat
-      - BEDROCK_SERVICE_URL=http://bedrock-service:9000
-      - FILE_SERVICE_URL=http://file-service:7000
-      - QA_SERVICE_URL=http://intelligent-qa-service:6000
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
     networks:
       - bedrock-network
-    depends_on:
-      - mysql
-      - bedrock-service
-      - file-service
-      - intelligent-qa-service
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9000/health"]
+      timeout: 5s
+      retries: 5
 
-  # NEW: Intelligent Q&A Service
-  intelligent-qa-service:
-    build:
-      context: ./intelligent-qa-service
-      dockerfile: Dockerfile
-    container_name: intelligent-qa-service
-    ports:
-      - "6000:6000"
-    environment:
-      - DATABASE_URL=mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat
-      - BEDROCK_SERVICE_URL=http://bedrock-service:9000
-      - FILE_SERVICE_URL=http://file-service:7000
-    networks:
-      - bedrock-network
-    depends_on:
-      - mysql
-      - bedrock-service
-      - file-service
-    restart: unless-stopped
-
-  # File Service - Python FastAPI for file uploads and processing
+  # File Service - File Processing
   file-service:
     build:
       context: ./file-service
@@ -76,42 +61,75 @@ services:
     networks:
       - bedrock-network
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
     restart: unless-stopped
 
-  # MySQL Database with Enhanced Schema
-  mysql:
-    image: mysql:8.0
-    container_name: mysql
-    ports:
-      - "3306:3306"
-    environment:
-      - MYSQL_ROOT_PASSWORD=root_password
-      - MYSQL_DATABASE=bedrock_chat
-      - MYSQL_USER=bedrock_user
-      - MYSQL_PASSWORD=bedrock_password
-    volumes:
-      - mysql-data:/var/lib/mysql
-      - ./database/enhanced_init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - bedrock-network
-    restart: unless-stopped
-    command: --default-authentication-plugin=mysql_native_password
-
-  # Bedrock Service - Enhanced Go Application
-  bedrock-service:
+  # Intelligent Q&A Service - Fixed version
+  intelligent-qa-service:
     build:
-      context: ./bedrock-service
+      context: ./intelligent-qa-service
       dockerfile: Dockerfile
-    container_name: bedrock-service
+    container_name: intelligent-qa-service
     ports:
-      - "9000:9000"
+      - "6000:6000"
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - DATABASE_URL=mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat
+      - BEDROCK_SERVICE_URL=http://bedrock-service:9000
+      - FILE_SERVICE_URL=http://file-service:7000
     networks:
       - bedrock-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      bedrock-service:
+        condition: service_healthy
+      file-service:
+        condition: service_started
+    restart: unless-stopped
+
+  # API Gateway - Main orchestrator
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat
+      - BEDROCK_SERVICE_URL=http://bedrock-service:9000
+      - FILE_SERVICE_URL=http://file-service:7000
+      - QA_SERVICE_URL=http://intelligent-qa-service:6000
+    networks:
+      - bedrock-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      bedrock-service:
+        condition: service_healthy
+      file-service:
+        condition: service_started
+      intelligent-qa-service:
+        condition: service_started
+    restart: unless-stopped
+
+  # Frontend Service - React Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_URL=http://localhost:8000
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    networks:
+      - bedrock-network
+    depends_on:
+      - api-gateway
     restart: unless-stopped
 
 networks:

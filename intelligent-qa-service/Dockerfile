@@ -1,4 +1,4 @@
-# intelligent-qa-service/Dockerfile
+# intelligent-qa-service/Dockerfile - Fixed version
 FROM python:3.11-slim AS builder
 
 # Set working directory
@@ -28,7 +28,7 @@ WORKDIR /app
 COPY --from=builder /root/.local /home/appuser/.local
 
 # Copy application code
-COPY --chown=appuser:appuser . .
+COPY --chown=appuser:appuser main.py .
 
 # Set Python path
 ENV PATH=/home/appuser/.local/bin:$PATH
