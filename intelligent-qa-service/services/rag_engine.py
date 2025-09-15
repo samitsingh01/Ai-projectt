@@ -1,4 +1,4 @@
-# intelligent-qa-service/services/rag_engine.py - Improved version
+# intelligent-qa-service/services/rag_engine.py - FIXED for t2.large
 import httpx
 import json
 import logging
@@ -6,87 +6,61 @@ from typing import List, Dict, Any
 import re
 import asyncio
 from datetime import datetime
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
 class RAGEngine:
     def __init__(self, bedrock_url: str):
         self.bedrock_url = bedrock_url
-        self.max_context_length = 8000
-        self.timeout = 60.0
+        self.max_context_length = 4000  # Reduced for efficiency
+        self.timeout = 30.0              # Reduced timeout
         
     async def generate_answer(self, question: str, context_chunks: List[Dict]) -> Dict[str, Any]:
-        """Generate an answer using RAG with document context"""
+        """Generate answer using RAG with lightweight processing"""
         try:
             if not context_chunks:
                 return {
                     "answer": "I don't have any relevant document context to answer this question.",
                     "confidence": 0.0,
                     "model_used": "rag-engine"
-                }
-            
-            # Build context from chunks
-            context = self._build_context(context_chunks)
-            
-            # Create enhanced prompt
-            prompt = self._create_rag_prompt(question, context, context_chunks)
-            
-            # Try to get answer from Bedrock
-            bedrock_result = await self._call_bedrock_service(prompt)
-            
-            if bedrock_result:
-                # Calculate confidence score
-                confidence = self._calculate_confidence(
-                    question=question,
-                    answer=bedrock_result["answer"],
-                    context_chunks=context_chunks
-                )
-                
-                return {
-                    "answer": bedrock_result["answer"],
-                    "confidence": confidence,
-                    "model_used": bedrock_result.get("model_used", "bedrock-service")
-                }
-            else:
-                # Fallback to rule-based answer
-                logger.warning("Bedrock service unavailable, using fallback answer generation")
-                return await self._generate_fallback_answer(question, context_chunks)
-                
-        except Exception as e:
-            logger.error(f"Error generating RAG answer: {e}")
-            return {
-                "answer": f"I encountered an error while generating an answer: {str(e)}. Please try again.",
-                "confidence": 0.0,
-                "model_used": "rag-engine-error"
-            }
-    
+        
     async def generate_related_questions(self, question: str, context_chunks: List[Dict]) -> List[str]:
-        """Generate related questions based on the context"""
+        """Generate related questions using simple template-based approach"""
         try:
             if not context_chunks:
                 return []
             
-            context = self._build_context(context_chunks[:2])  # Use top 2 chunks
+            # Extract key terms from chunks
+            all_text = " ".join(chunk['text'][:200] for chunk in context_chunks[:2])
+            keywords = self._extract_simple_keywords(all_text)
             
-            prompt = self._create_related_questions_prompt(question, context)
+            # Simple question templates
+            templates = [
+                "What is {}?",
+                "How does {} work?", 
+                "Why is {} important?",
+                "Where is {} used?",
+                "When was {} developed?"
+            ]
             
-            # Try Bedrock first
-            bedrock_result = await self._call_bedrock_service(prompt, max_tokens=300, temperature=0.7)
+            related_questions = []
+            question_lower = question.lower()
             
-            if bedrock_result:
-                questions = self._parse_related_questions(bedrock_result["answer"])
-                return questions[:3]
-            else:
-                # Fallback to rule-based question generation
-                return self._generate_fallback_questions(question, context_chunks)
-                
+            for i, keyword in enumerate(keywords[:3]):
+                if keyword.lower() not in question_lower and len(keyword) > 3:
+                    template = templates[i % len(templates)]
+                    related_questions.append(template.format(keyword))
+            
+            return related_questions
+            
         except Exception as e:
             logger.error(f"Error generating related questions: {e}")
             return []
     
-    async def _call_bedrock_service(self, prompt: str, max_tokens: int = 1500, 
+    async def _call_bedrock_service(self, prompt: str, max_tokens: int = 800, 
                                   temperature: float = 0.3) -> Dict[str, Any]:
-        """Call Bedrock service with proper error handling"""
+        """Call Bedrock service with reduced parameters"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
@@ -94,8 +68,7 @@ class RAGEngine:
                     json={
                         "prompt": prompt,
                         "max_tokens": max_tokens,
-                        "temperature": temperature,
-                        "model": "claude-3-5-sonnet"  # Prefer Claude for RAG
+                        "temperature": temperature
                     }
                 )
                 
@@ -106,234 +79,200 @@ class RAGEngine:
                         "model_used": result.get("model_used", "bedrock-service")
                     }
                 else:
-                    logger.error(f"Bedrock service HTTP error: {response.status_code}")
+                    logger.warning(f"Bedrock service HTTP error: {response.status_code}")
                     return None
                     
         except httpx.TimeoutException:
-            logger.error("Bedrock service timeout")
-            return None
-        except httpx.ConnectError:
-            logger.error("Cannot connect to Bedrock service")
+            logger.warning("Bedrock service timeout")
             return None
         except Exception as e:
-            logger.error(f"Bedrock service error: {e}")
+            logger.warning(f"Bedrock service error: {e}")
             return None
     
-    async def _generate_fallback_answer(self, question: str, context_chunks: List[Dict]) -> Dict[str, Any]:
-        """Generate a fallback answer using rule-based approach"""
+    def _generate_extractive_answer(self, question: str, context_chunks: List[Dict]) -> Dict[str, Any]:
+        """Generate answer using simple extractive method"""
         try:
-            # Simple extractive approach
-            question_words = set(question.lower().split())
+            question_words = set(self._extract_words(question))
+            best_sentences = []
             
-            # Find chunks with highest word overlap
-            best_chunk = None
-            best_overlap = 0
-            
-            for chunk in context_chunks:
-                chunk_words = set(chunk['text'].lower().split())
-                overlap = len(question_words & chunk_words)
-                if overlap > best_overlap:
-                    best_overlap = overlap
-                    best_chunk = chunk
-            
-            if best_chunk and best_overlap > 0:
-                # Extract relevant sentences
-                sentences = re.split(r'[.!?]+', best_chunk['text'])
-                relevant_sentences = []
+            # Find sentences with highest word overlap
+            for chunk in context_chunks[:3]:  # Use top 3 chunks
+                text = chunk['text']
+                sentences = self._split_sentences(text)
                 
                 for sentence in sentences:
-                    sentence = sentence.strip()
-                    if len(sentence) > 20:  # Minimum sentence length
-                        sentence_words = set(sentence.lower().split())
-                        if len(question_words & sentence_words) > 0:
-                            relevant_sentences.append(sentence)
-                
-                if relevant_sentences:
-                    answer = '. '.join(relevant_sentences[:3]) + '.'
-                    confidence = min(0.7, best_overlap / len(question_words))
-                else:
-                    answer = f"Based on the document '{best_chunk['filename']}', {best_chunk['text'][:200]}..."
-                    confidence = 0.4
+                    if len(sentence.strip()) < 20:  # Skip very short sentences
+                        continue
                     
+                    sentence_words = set(self._extract_words(sentence))
+                    overlap = len(question_words & sentence_words)
+                    
+                    if overlap > 0:
+                        score = overlap / max(len(question_words), 1)
+                        filename = chunk.get('filename', 'Unknown')
+                        best_sentences.append((sentence.strip(), score, filename))
+            
+            if best_sentences:
+                # Sort by score and combine top sentences
+                best_sentences.sort(key=lambda x: x[1], reverse=True)
+                
+                # Build answer from top sentences
+                answer_parts = []
+                used_files = set()
+                
+                for sentence, score, filename in best_sentences[:2]:
+                    if filename not in used_files:
+                        answer_parts.append(f"According to {filename}: {sentence}")
+                        used_files.add(filename)
+                    else:
+                        answer_parts.append(sentence)
+                
+                answer = " ".join(answer_parts)
+                confidence = min(0.7, best_sentences[0][1] + 0.2)
+                
                 return {
                     "answer": answer,
                     "confidence": confidence,
-                    "model_used": "fallback-extraction"
+                    "model_used": "extractive-rag"
                 }
             else:
+                # Last resort: return snippet from best chunk
+                best_chunk = context_chunks[0]
+                snippet = best_chunk['text'][:300]
+                filename = best_chunk.get('filename', 'Unknown')
+                
                 return {
-                    "answer": "I found relevant documents but couldn't extract a specific answer to your question. Please try rephrasing your question.",
-                    "confidence": 0.2,
-                    "model_used": "fallback-extraction"
+                    "answer": f"Based on {filename}: {snippet}...",
+                    "confidence": 0.4,
+                    "model_used": "snippet-rag"
                 }
                 
         except Exception as e:
-            logger.error(f"Error in fallback answer generation: {e}")
+            logger.error(f"Error in extractive answer: {e}")
             return {
-                "answer": "I encountered an error while processing the documents. Please try again.",
+                "answer": "I couldn't extract a specific answer from the documents.",
                 "confidence": 0.0,
-                "model_used": "fallback-error"
+                "model_used": "error-extractive"
             }
     
-    def _generate_fallback_questions(self, question: str, context_chunks: List[Dict]) -> List[str]:
-        """Generate related questions using rule-based approach"""
+    def _build_efficient_context(self, chunks: List[Dict]) -> str:
+        """Build context with strict length control"""
         try:
-            related_questions = []
+            context_parts = []
+            current_length = 0
             
-            # Extract key topics from context
-            all_text = " ".join(chunk['text'] for chunk in context_chunks[:3])
-            words = re.findall(r'\b[A-Z][a-z]+\b', all_text)  # Proper nouns
+            for i, chunk in enumerate(chunks):
+                filename = chunk.get('filename', f'Document_{i+1}')
+                text = chunk['text']
+                
+                # Create chunk header
+                header = f"[{filename}]"
+                
+                # Calculate available space
+                available_space = self.max_context_length - current_length - len(header) - 10
+                
+                if available_space < 100:  # Not enough space
+                    break
+                
+                # Truncate text if needed
+                if len(text) > available_space:
+                    text = text[:available_space] + "..."
+                
+                chunk_content = f"{header}\n{text}\n"
+                context_parts.append(chunk_content)
+                current_length += len(chunk_content)
+                
+                # Stop if we've used enough chunks
+                if i >= 2 or current_length > self.max_context_length * 0.8:
+                    break
             
-            # Common question patterns
-            patterns = [
-                "What is {}?",
-                "How does {} work?",
-                "Why is {} important?",
-                "When was {} developed?",
-                "Where is {} used?"
-            ]
-            
-            # Generate questions from key terms
-            key_terms = list(set(words))[:10]  # Top 10 unique proper nouns
-            
-            for term in key_terms[:3]:  # Limit to 3 terms
-                if len(term) > 3 and term.lower() not in question.lower():
-                    pattern = patterns[len(related_questions) % len(patterns)]
-                    related_questions.append(pattern.format(term))
-            
-            return related_questions[:3]
+            return "\n".join(context_parts)
             
         except Exception as e:
-            logger.error(f"Error generating fallback questions: {e}")
-            return []
+            logger.error(f"Error building context: {e}")
+            return ""
     
-    def _build_context(self, chunks: List[Dict]) -> str:
-        """Build context string from document chunks with length control"""
-        context_parts = []
-        current_length = 0
-        
-        for i, chunk in enumerate(chunks):
-            # Create chunk header
-            chunk_header = f"[Document: {chunk.get('filename', 'Unknown')} | Page: {chunk.get('page_number', 'Unknown')}]"
-            chunk_content = f"{chunk_header}\n{chunk['text']}\n\n"
-            
-            # Check if adding this chunk would exceed context limit
-            if current_length + len(chunk_content) > self.max_context_length:
-                # Try to fit a truncated version
-                remaining_space = self.max_context_length - current_length - len(chunk_header) - 10
-                if remaining_space > 100:  # Only if we have reasonable space
-                    truncated_text = chunk['text'][:remaining_space] + "..."
-                    chunk_content = f"{chunk_header}\n{truncated_text}\n\n"
-                    context_parts.append(chunk_content)
-                break
-            
-            context_parts.append(chunk_content)
-            current_length += len(chunk_content)
-        
-        return "".join(context_parts)
-    
-    def _create_rag_prompt(self, question: str, context: str, chunks: List[Dict]) -> str:
-        """Create an enhanced RAG prompt with better instructions"""
-        chunk_count = len(chunks)
-        doc_names = list(set(chunk.get('filename', 'Unknown') for chunk in chunks))
-        
-        return f"""You are an intelligent document analysis assistant. Answer the user's question based ONLY on the provided context from uploaded documents.
+    def _create_simple_rag_prompt(self, question: str, context: str) -> str:
+        """Create simple, efficient RAG prompt"""
+        return f"""Answer the question based on the provided documents. Be specific and concise.
 
-INSTRUCTIONS:
-1. Answer based solely on the provided context - do not use external knowledge
-2. If the context doesn't contain enough information, say so clearly
-3. Include specific references to documents and page numbers when possible
-4. Be precise, factual, and concise
-5. If you're uncertain about any aspect, indicate your level of confidence
-6. Use direct quotes from the documents when relevant (in quotation marks)
-
-CONTEXT FROM UPLOADED DOCUMENTS ({chunk_count} sections from {len(doc_names)} document(s): {', '.join(doc_names)}):
+Documents:
 {context}
 
-USER QUESTION: {question}
+Question: {question}
 
-Please provide a comprehensive answer based on the document context above:"""
+Answer:"""
     
-    def _create_related_questions_prompt(self, question: str, context: str) -> str:
-        """Create prompt for generating related questions"""
-        return f"""Based on the following document context and the user's original question, suggest 3 related questions that would be helpful and relevant.
-
-DOCUMENT CONTEXT:
-{context[:1500]}
-
-ORIGINAL QUESTION: {question}
-
-Please generate exactly 3 related questions that:
-1. Are directly related to the document content
-2. Would provide additional useful information
-3. Are different from the original question
-4. Can potentially be answered using the document context
-
-Format: Return only the questions, one per line, without numbering or bullet points."""
-    
-    def _calculate_confidence(self, question: str, answer: str, context_chunks: List[Dict]) -> float:
-        """Calculate confidence score for the RAG answer"""
+    def _calculate_simple_confidence(self, question: str, answer: str, context_chunks: List[Dict]) -> float:
+        """Calculate confidence using simple metrics"""
         try:
-            confidence_factors = []
+            factors = []
             
-            # Factor 1: Answer length and completeness (20%)
-            answer_length_score = min(len(answer) / 300, 1.0)  # Normalize to 300 chars
-            confidence_factors.append(answer_length_score * 0.2)
+            # Factor 1: Answer length (20%)
+            length_score = min(len(answer) / 200, 1.0)
+            factors.append(length_score * 0.2)
             
-            # Factor 2: Number and quality of source chunks (30%)
+            # Factor 2: Word overlap between question and answer (30%)
+            question_words = set(self._extract_words(question))
+            answer_words = set(self._extract_words(answer))
+            overlap = len(question_words & answer_words)
+            overlap_score = overlap / max(len(question_words), 1)
+            factors.append(overlap_score * 0.3)
+            
+            # Factor 3: Number of source chunks (25%)
             source_score = min(len(context_chunks) / 3, 1.0)
+            factors.append(source_score * 0.25)
+            
+            # Factor 4: Average chunk similarity (25%)
             avg_similarity = sum(chunk.get('similarity', 0.5) for chunk in context_chunks) / len(context_chunks)
-            source_quality_score = source_score * avg_similarity
-            confidence_factors.append(source_quality_score * 0.3)
+            factors.append(avg_similarity * 0.25)
             
-            # Factor 3: Question-answer semantic overlap (25%)
-            question_words = set(re.findall(r'\b\w+\b', question.lower()))
-            answer_words = set(re.findall(r'\b\w+\b', answer.lower()))
-            overlap_score = len(question_words & answer_words) / max(len(question_words), 1)
-            confidence_factors.append(overlap_score * 0.25)
-            
-            # Factor 4: Presence of document references and quotes (15%)
-            reference_indicators = ['document', 'page', 'according to', 'states that', '"']
-            reference_count = sum(1 for indicator in reference_indicators if indicator in answer.lower())
-            reference_score = min(reference_count / len(reference_indicators), 1.0)
-            confidence_factors.append(reference_score * 0.15)
-            
-            # Factor 5: Answer specificity (10%)
-            specific_terms = len(re.findall(r'\b[A-Z][a-z]+\b', answer))  # Proper nouns
-            specificity_score = min(specific_terms / 5, 1.0)
-            confidence_factors.append(specificity_score * 0.1)
-            
-            # Calculate final confidence
-            final_confidence = sum(confidence_factors)
-            
-            # Apply bounds and add small random variation
-            import random
-            final_confidence += random.uniform(-0.03, 0.03)
-            final_confidence = max(0.15, min(0.95, final_confidence))
-            
-            return round(final_confidence, 3)
+            final_confidence = sum(factors)
+            return max(0.1, min(0.9, final_confidence))
             
         except Exception as e:
             logger.error(f"Error calculating confidence: {e}")
             return 0.5
     
-    def _parse_related_questions(self, response: str) -> List[str]:
-        """Parse related questions from AI response"""
+    def _extract_words(self, text: str) -> List[str]:
+        """Extract words using simple regex"""
         try:
-            lines = response.strip().split('\n')
-            questions = []
+            return re.findall(r'\b[a-zA-Z]{2,}\b', text.lower())
+        except Exception as e:
+            logger.error(f"Error extracting words: {e}")
+            return []
+    
+    def _extract_simple_keywords(self, text: str, max_keywords: int = 10) -> List[str]:
+        """Extract keywords using simple frequency analysis"""
+        try:
+            # Common stop words
+            stop_words = {
+                'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of',
+                'with', 'by', 'is', 'are', 'was', 'were', 'will', 'would', 'could',
+                'have', 'has', 'had', 'this', 'that', 'these', 'those', 'a', 'an'
+            }
             
-            for line in lines:
-                line = line.strip()
-                # Remove numbering, bullets, etc.
-                line = re.sub(r'^[\d\.\-\*\s]+', '', line)
-                
-                # Basic question validation
-                if line and len(line) > 10 and '?' in line and len(line) < 200:
-                    questions.append(line)
+            # Extract words and filter
+            words = self._extract_words(text)
+            keywords = [word for word in words if word not in stop_words and len(word) > 3]
             
-            return questions
+            # Count frequency
+            word_counts = Counter(keywords)
+            return [word for word, count in word_counts.most_common(max_keywords)]
             
         except Exception as e:
-            logger.error(f"Error parsing related questions: {e}")
+            logger.error(f"Error extracting keywords: {e}")
             return []
+    
+    def _split_sentences(self, text: str) -> List[str]:
+        """Split text into sentences using simple regex"""
+        try:
+            # Simple sentence splitting
+            sentences = re.split(r'(?<=[.!?])\s+', text)
+            return [s.strip() for s in sentences if s.strip()]
+        except Exception as e:
+            logger.error(f"Error splitting sentences: {e}")
+            return [text]
+            
+            # Build optimized context
+            context = self._build_efficient_context

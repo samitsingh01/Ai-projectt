@@ -1,8 +1,8 @@
-# intelligent-qa-service/services/citation_tracker.py
+# intelligent-qa-service/services/citation_tracker.py - FIXED for t2.large
 import re
 import logging
 from typing import List, Dict, Any
-import difflib
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -12,35 +12,32 @@ class CitationTracker:
         self.min_snippet_length = 30
         
     def generate_citations(self, chunks: List[Dict], answer: str) -> List[Dict[str, Any]]:
-        """
-        Generate citations by matching answer content to source chunks
-        """
+        """Generate citations using simple text matching"""
         try:
             citations = []
             
-            for i, chunk in enumerate(chunks):
-                # Calculate relevance score
-                relevance_score = self._calculate_relevance(chunk, answer)
+            for chunk in chunks:
+                # Calculate simple relevance score
+                relevance_score = self._calculate_simple_relevance(chunk, answer)
                 
                 # Extract relevant snippet
-                snippet = self._extract_relevant_snippet(chunk['text'], answer)
+                snippet = self._extract_simple_snippet(chunk['text'], answer)
                 
                 # Create citation
                 citation = {
                     "source_id": chunk['id'],
-                    "document": chunk['filename'],
+                    "document": chunk.get('filename', 'Unknown'),
                     "page": chunk.get('page_number', 1),
                     "section": chunk.get('metadata', {}).get('section', ''),
                     "snippet": snippet,
                     "relevance_score": relevance_score,
                     "similarity": chunk.get('similarity', 0.0),
-                    "citation_format": self._format_citation(chunk),
-                    "text_snippet": self._create_text_snippet(chunk['text'])
+                    "citation_format": self._format_simple_citation(chunk),
                 }
                 
                 citations.append(citation)
             
-            # Sort by relevance and similarity
+            # Sort by combined relevance and similarity
             citations.sort(key=lambda x: (x['relevance_score'] + x['similarity']) / 2, reverse=True)
             
             return citations
@@ -49,214 +46,212 @@ class CitationTracker:
             logger.error(f"Error generating citations: {e}")
             return []
     
-    def _calculate_relevance(self, chunk: Dict, answer: str) -> float:
-        """
-        Calculate how relevant a chunk is to the generated answer
-        """
+    def _calculate_simple_relevance(self, chunk: Dict, answer: str) -> float:
+        """Calculate relevance using simple word overlap"""
         try:
             chunk_text = chunk['text'].lower()
             answer_text = answer.lower()
             
-            # Extract key phrases from answer
-            answer_phrases = self._extract_key_phrases(answer_text)
+            # Extract words
+            chunk_words = set(self._extract_words(chunk_text))
+            answer_words = set(self._extract_words(answer_text))
             
-            # Count phrase matches
-            matches = 0
-            total_phrases = len(answer_phrases)
+            if not chunk_words or not answer_words:
+                return 0.0
             
-            for phrase in answer_phrases:
-                if phrase in chunk_text:
-                    matches += 1
+            # Calculate word overlap
+            overlap = chunk_words & answer_words
+            union = chunk_words | answer_words
             
-            # Calculate base relevance
-            base_relevance = matches / max(total_phrases, 1)
+            base_score = len(overlap) / len(union) if union else 0.0
             
-            # Boost for direct quotes (text that appears exactly in both)
-            direct_quotes = self._find_direct_quotes(chunk_text, answer_text)
-            quote_boost = min(len(direct_quotes) * 0.1, 0.3)
+            # Boost for common phrases
+            phrase_boost = self._calculate_phrase_overlap(chunk_text, answer_text)
             
-            # Boost for similar sentence structures
-            similarity_boost = self._calculate_text_similarity(chunk_text, answer_text) * 0.2
+            # Boost for exact word matches in answer
+            exact_boost = self._calculate_exact_matches(chunk_text, answer_text)
             
-            final_relevance = min(1.0, base_relevance + quote_boost + similarity_boost)
+            final_score = base_score + (phrase_boost * 0.3) + (exact_boost * 0.2)
             
-            return final_relevance
+            return min(1.0, final_score)
             
         except Exception as e:
             logger.error(f"Error calculating relevance: {e}")
             return 0.0
     
-    def _extract_key_phrases(self, text: str) -> List[str]:
-        """
-        Extract key phrases from text
-        """
+    def _extract_words(self, text: str) -> List[str]:
+        """Extract words using simple regex"""
         try:
-            # Remove common stop words
-            stop_words = {'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 
-                         'with', 'by', 'is', 'are', 'was', 'were', 'will', 'would', 'could',
-                         'this', 'that', 'these', 'those', 'a', 'an'}
-            
-            # Extract phrases (2-4 words)
-            words = re.findall(r'\b\w+\b', text.lower())
-            phrases = []
-            
-            for i in range(len(words) - 1):
-                # 2-word phrases
-                if words[i] not in stop_words or words[i+1] not in stop_words:
-                    phrase = f"{words[i]} {words[i+1]}"
-                    if len(phrase) > 6:  # Minimum phrase length
-                        phrases.append(phrase)
-                
-                # 3-word phrases
-                if i < len(words) - 2:
-                    phrase = f"{words[i]} {words[i+1]} {words[i+2]}"
-                    if any(word not in stop_words for word in words[i:i+3]):
-                        phrases.append(phrase)
-            
-            return list(set(phrases))  # Remove duplicates
-            
+            return re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
         except Exception as e:
-            logger.error(f"Error extracting key phrases: {e}")
+            logger.error(f"Error extracting words: {e}")
             return []
     
-    def _find_direct_quotes(self, source_text: str, answer_text: str) -> List[str]:
-        """
-        Find text that appears directly in both source and answer
-        """
+    def _calculate_phrase_overlap(self, text1: str, text2: str) -> float:
+        """Calculate overlap of 2-3 word phrases"""
         try:
-            quotes = []
+            phrases1 = self._extract_simple_phrases(text1)
+            phrases2 = self._extract_simple_phrases(text2)
             
-            # Look for sequences of 4+ consecutive words
-            source_words = re.findall(r'\b\w+\b', source_text.lower())
-            answer_words = re.findall(r'\b\w+\b', answer_text.lower())
+            if not phrases1 or not phrases2:
+                return 0.0
             
-            for i in range(len(answer_words) - 3):
-                for length in range(4, min(10, len(answer_words) - i + 1)):
-                    phrase = ' '.join(answer_words[i:i+length])
-                    source_phrase = ' '.join(source_words)
-                    
-                    if phrase in source_phrase and len(phrase) > 15:
-                        quotes.append(phrase)
+            common_phrases = set(phrases1) & set(phrases2)
+            total_phrases = set(phrases1) | set(phrases2)
             
-            return quotes
+            return len(common_phrases) / len(total_phrases) if total_phrases else 0.0
             
         except Exception as e:
-            logger.error(f"Error finding direct quotes: {e}")
-            return []
-    
-    def _calculate_text_similarity(self, text1: str, text2: str) -> float:
-        """
-        Calculate text similarity using sequence matching
-        """
-        try:
-            # Use difflib for sequence matching
-            matcher = difflib.SequenceMatcher(None, text1, text2)
-            return matcher.ratio()
-            
-        except Exception as e:
-            logger.error(f"Error calculating text similarity: {e}")
+            logger.error(f"Error calculating phrase overlap: {e}")
             return 0.0
     
-    def _extract_relevant_snippet(self, chunk_text: str, answer: str) -> str:
-        """
-        Extract the most relevant snippet from a chunk based on the answer
-        """
+    def _extract_simple_phrases(self, text: str) -> List[str]:
+        """Extract 2-3 word phrases"""
         try:
-            # Split chunk into sentences
-            sentences = re.split(r'[.!?]+', chunk_text)
+            words = self._extract_words(text)
+            phrases = []
+            
+            # Extract 2-word phrases
+            for i in range(len(words) - 1):
+                if len(words[i]) > 2 and len(words[i+1]) > 2:
+                    phrase = f"{words[i]} {words[i+1]}"
+                    phrases.append(phrase)
+            
+            # Extract 3-word phrases (limited)
+            for i in range(min(len(words) - 2, 20)):  # Limit for efficiency
+                phrase = f"{words[i]} {words[i+1]} {words[i+2]}"
+                phrases.append(phrase)
+            
+            return phrases
+            
+        except Exception as e:
+            logger.error(f"Error extracting phrases: {e}")
+            return []
+    
+    def _calculate_exact_matches(self, source_text: str, answer_text: str) -> float:
+        """Find exact word sequences that appear in both texts"""
+        try:
+            # Look for 4+ word sequences
+            source_words = self._extract_words(source_text)
+            answer_words = self._extract_words(answer_text)
+            
+            matches = 0
+            total_sequences = 0
+            
+            # Check 4-word sequences in answer
+            for i in range(len(answer_words) - 3):
+                total_sequences += 1
+                sequence = ' '.join(answer_words[i:i+4])
+                source_text_joined = ' '.join(source_words)
+                
+                if sequence in source_text_joined:
+                    matches += 1
+            
+            return matches / total_sequences if total_sequences > 0 else 0.0
+            
+        except Exception as e:
+            logger.error(f"Error calculating exact matches: {e}")
+            return 0.0
+    
+    def _extract_simple_snippet(self, chunk_text: str, answer: str) -> str:
+        """Extract relevant snippet using simple sentence scoring"""
+        try:
+            # Split into sentences
+            sentences = self._split_sentences(chunk_text)
             
             if not sentences:
-                return chunk_text[:self.max_snippet_length] + "..."
+                return self._truncate_text(chunk_text)
             
-            # Score each sentence based on overlap with answer
-            sentence_scores = []
-            answer_words = set(re.findall(r'\b\w+\b', answer.lower()))
+            # Score sentences based on word overlap with answer
+            answer_words = set(self._extract_words(answer))
+            scored_sentences = []
             
             for sentence in sentences:
                 sentence = sentence.strip()
                 if len(sentence) < self.min_snippet_length:
                     continue
                 
-                sentence_words = set(re.findall(r'\b\w+\b', sentence.lower()))
+                sentence_words = set(self._extract_words(sentence))
                 overlap = len(answer_words & sentence_words)
-                score = overlap / max(len(sentence_words), 1)
+                score = overlap / max(len(answer_words), 1)
                 
-                sentence_scores.append((sentence, score))
+                scored_sentences.append((sentence, score))
             
-            if not sentence_scores:
-                return chunk_text[:self.max_snippet_length] + "..."
+            if not scored_sentences:
+                return self._truncate_text(chunk_text)
             
-            # Get the best sentence(s)
-            sentence_scores.sort(key=lambda x: x[1], reverse=True)
+            # Sort by score and get best sentence
+            scored_sentences.sort(key=lambda x: x[1], reverse=True)
+            best_sentence = scored_sentences[0][0]
             
-            # Take top sentence and add context if needed
-            best_sentence = sentence_scores[0][0]
+            # If sentence is too long, truncate it
+            if len(best_sentence) > self.max_snippet_length:
+                return self._truncate_text(best_sentence)
             
-            if len(best_sentence) < self.max_snippet_length and len(sentence_scores) > 1:
-                # Add second best sentence if there's room
-                second_sentence = sentence_scores[1][0]
-                combined = f"{best_sentence}. {second_sentence}"
+            # If sentence is short, try to add context
+            if len(best_sentence) < self.max_snippet_length and len(scored_sentences) > 1:
+                second_sentence = scored_sentences[1][0]
+                combined = f"{best_sentence} {second_sentence}"
+                
                 if len(combined) <= self.max_snippet_length:
                     return combined
-            
-            # Truncate if too long
-            if len(best_sentence) > self.max_snippet_length:
-                return best_sentence[:self.max_snippet_length] + "..."
             
             return best_sentence
             
         except Exception as e:
-            logger.error(f"Error extracting relevant snippet: {e}")
-            return chunk_text[:self.max_snippet_length] + "..."
+            logger.error(f"Error extracting snippet: {e}")
+            return self._truncate_text(chunk_text)
     
-    def _format_citation(self, chunk: Dict) -> str:
-        """
-        Format citation in a standard academic style
-        """
+    def _split_sentences(self, text: str) -> List[str]:
+        """Split text into sentences using simple regex"""
+        try:
+            # Simple sentence splitting
+            sentences = re.split(r'(?<=[.!?])\s+', text)
+            return [s.strip() for s in sentences if s.strip()]
+        except Exception as e:
+            logger.error(f"Error splitting sentences: {e}")
+            return []
+    
+    def _truncate_text(self, text: str) -> str:
+        """Truncate text to max snippet length"""
+        try:
+            if len(text) <= self.max_snippet_length:
+                return text
+            
+            # Try to truncate at sentence boundary
+            truncated = text[:self.max_snippet_length]
+            
+            # Look for sentence ending
+            for ending in ['. ', '! ', '? ']:
+                last_ending = truncated.rfind(ending)
+                if last_ending > self.min_snippet_length:
+                    return text[:last_ending + 1]
+            
+            # Look for any period
+            last_period = truncated.rfind('.')
+            if last_period > self.min_snippet_length:
+                return text[:last_period + 1]
+            
+            # Fallback: truncate and add ellipsis
+            return truncated.rstrip() + "..."
+            
+        except Exception as e:
+            logger.error(f"Error truncating text: {e}")
+            return text[:self.max_snippet_length] + "..."
+    
+    def _format_simple_citation(self, chunk: Dict) -> str:
+        """Format citation in simple style"""
         try:
             filename = chunk.get('filename', 'Unknown Document')
             page = chunk.get('page_number', 1)
-            section = chunk.get('metadata', {}).get('section', '')
             
-            citation = f"{filename}"
+            citation = filename
             
             if page and page > 1:
                 citation += f", p. {page}"
-            
-            if section:
-                citation += f", {section}"
             
             return citation
             
         except Exception as e:
             logger.error(f"Error formatting citation: {e}")
             return "Unknown Source"
-    
-    def _create_text_snippet(self, text: str) -> str:
-        """
-        Create a clean text snippet for display
-        """
-        try:
-            # Clean up text
-            cleaned = re.sub(r'\s+', ' ', text).strip()
-            
-            # Truncate if needed
-            if len(cleaned) > self.max_snippet_length:
-                # Try to end at a sentence boundary
-                truncated = cleaned[:self.max_snippet_length]
-                last_period = truncated.rfind('.')
-                last_question = truncated.rfind('?')
-                last_exclamation = truncated.rfind('!')
-                
-                last_sentence_end = max(last_period, last_question, last_exclamation)
-                
-                if last_sentence_end > self.min_snippet_length:
-                    return cleaned[:last_sentence_end + 1]
-                else:
-                    return truncated + "..."
-            
-            return cleaned
-            
-        except Exception as e:
-            logger.error(f"Error creating text snippet: {e}")
-            return text[:self.max_snippet_length] + "..."
