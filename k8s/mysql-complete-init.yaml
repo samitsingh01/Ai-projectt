@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init-script
+  namespace: langchain-app
+data:
+  01-init.sql: |
+    CREATE DATABASE IF NOT EXISTS bedrock_chat;
+    USE bedrock_chat;
+    
+    CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        session_id VARCHAR(255) UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        user_preferences JSON,
+        total_questions INT DEFAULT 0,
+        INDEX idx_session_id (session_id)
+    );
+    
+    CREATE TABLE IF NOT EXISTS conversations (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        session_id VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        response TEXT NOT NULL,
+        model_used VARCHAR(100) DEFAULT 'unknown',
+        conversation_type ENUM('chat', 'qa', 'analysis') DEFAULT 'chat',
+        has_sources BOOLEAN DEFAULT FALSE,
+        response_time_ms INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_session_id (session_id),
+        INDEX idx_created_at (created_at),
+        INDEX idx_session_created (session_id, created_at),
+        INDEX idx_conversation_type (conversation_type)
+    );
+    
+    CREATE TABLE IF NOT EXISTS uploaded_files (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        session_id VARCHAR(255) NOT NULL,
+        filename VARCHAR(255) NOT NULL,
+        original_name VARCHAR(255) NOT NULL,
+        file_type VARCHAR(100) NOT NULL,
+        file_size BIGINT NOT NULL,
+        file_path VARCHAR(500) NOT NULL,
+        extracted_text LONGTEXT,
+        is_processed BOOLEAN DEFAULT FALSE,
+        processing_status ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending',
+        upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        processed_date TIMESTAMP NULL,
+        INDEX idx_session_id (session_id),
+        INDEX idx_upload_date (upload_date),
+        INDEX idx_session_upload (session_id, upload_date),
+        INDEX idx_processing_status (processing_status)
+    );
+    
+    CREATE TABLE IF NOT EXISTS document_chunks (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        session_id VARCHAR(255) NOT NULL,
+        file_id INT NOT NULL,
+        chunk_index INT NOT NULL,
+        chunk_text LONGTEXT NOT NULL,
+        chunk_embedding LONGTEXT,
+        metadata JSON,
+        word_count INT DEFAULT 0,
+        char_count INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_session_id (session_id),
+        INDEX idx_file_id (file_id),
+        INDEX idx_session_file (session_id, file_id),
+        INDEX idx_chunk_index (chunk_index),
+        UNIQUE KEY unique_file_chunk (file_id, chunk_index)
+    );
+    
+    CREATE TABLE IF NOT EXISTS qa_interactions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        session_id VARCHAR(255) NOT NULL,
+        question TEXT NOT NULL,
+        answer LONGTEXT NOT NULL,
+        source_chunks JSON,
+        confidence_score FLOAT DEFAULT 0.0,
+        processing_time_ms INT DEFAULT 0,
+        model_used VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_session_id (session_id),
+        INDEX idx_created_at (created_at),
+        INDEX idx_confidence (confidence_score),
+        INDEX idx_session_confidence (session_id, confidence_score)
+    );
+
+    GRANT ALL PRIVILEGES ON bedrock_chat.* TO 'bedrock_user'@'%';
+    FLUSH PRIVILEGES;
+    
+    INSERT IGNORE INTO users (session_id, user_preferences) VALUES 
+    ('demo_session_001', '{"theme": "dark", "language": "en"}');

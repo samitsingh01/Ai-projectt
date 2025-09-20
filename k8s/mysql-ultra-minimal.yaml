@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: langchain-app
+  labels:
+    app: mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:5.7
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: "root_password"
+        - name: MYSQL_DATABASE
+          value: "bedrock_chat"
+        - name: MYSQL_USER
+          value: "bedrock_user"
+        - name: MYSQL_PASSWORD
+          value: "bedrock_password"
+        - name: MYSQL_ALLOW_EMPTY_PASSWORD
+          value: "no"
+        args:
+        - --innodb-buffer-pool-size=16M
+        - --max-connections=10
+        - --innodb-log-file-size=4M
+        - --skip-innodb-doublewrite
+        - --innodb-flush-method=O_DIRECT_NO_FSYNC
+        - --table-open-cache=32
+        - --query-cache-size=0
+        - --query-cache-type=0
+        - --skip-performance-schema
+        - --disable-log-bin
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "20m"
+          limits:
+            memory: "64Mi"
+            cpu: "40m"
+      volumes:
+      - name: mysql-data
+        emptyDir:
+          sizeLimit: 200Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: langchain-app
+spec:
+  selector:
+    app: mysql
+  ports:
+  - port: 3306
+    targetPort: 3306
+  type: ClusterIP

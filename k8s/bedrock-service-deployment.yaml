@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: bedrock-service
-  namespace: bedrock-chat-v2
+  namespace: langchain-app
   labels:
     app: bedrock-service
 spec:
@@ -19,7 +19,7 @@ spec:
         - name: docker-hub-secret
       containers:
         - name: bedrock-service
-          image: samitsinghhh/bedrock-service:v2
+          image: samitsinghhh/langchain-3:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 9000
@@ -74,3 +74,16 @@ spec:
             limits:
               memory: "384Mi"
               cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bedrock-service
+  namespace: langchain-app
+spec:
+  selector:
+    app: bedrock-service
+  ports:
+    - port: 9000
+      targetPort: 9000
+  type: ClusterIP

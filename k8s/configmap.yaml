@@ -2,11 +2,11 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: app-config
-  namespace: bedrock-chat-v2
+  namespace: langchain-app
 data:
+  AWS_REGION: "us-east-1"
   DATABASE_URL: "mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat"
   BEDROCK_SERVICE_URL: "http://bedrock-service:9000"
   FILE_SERVICE_URL: "http://file-service:7000"
-  AWS_REGION: "us-east-1"
   UPLOAD_DIR: "/app/uploads"
-  REACT_APP_API_URL: "/api"
+  REACT_APP_API_URL: "http://localhost:8000"
