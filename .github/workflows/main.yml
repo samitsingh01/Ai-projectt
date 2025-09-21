@@ -16,6 +16,13 @@ jobs:
     - name: Apply K8s files
       run: |
         kubectl apply -f k8s/01-namespace.yaml
+        
+        # Create AWS secrets from repository secrets
+        kubectl create secret generic aws-secrets \
+          --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
+          --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+          -n bedrock-chat --dry-run=client -o yaml | kubectl apply -f -
+        
         kubectl apply -f k8s/02-secrets.yaml
         kubectl apply -f k8s/03-configmap.yaml
         kubectl apply -f k8s/04-rbac.yaml
