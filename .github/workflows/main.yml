@@ -35,7 +35,7 @@ jobs:
         
         # Deploy MySQL first and wait
         kubectl apply -f k8s/05-mysql-fixed.yaml
-        kubectl wait --for=condition=ready pod -l app=mysql -n bedrock-chat --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=mysql -n bedrock-chat --timeout=30s
         
         # Deploy other services
         kubectl apply -f k8s/06-bedrock-service.yaml
@@ -43,9 +43,9 @@ jobs:
         kubectl apply -f k8s/08-qa-service-fixed.yaml
         
         # Wait for dependencies before API Gateway
-        kubectl wait --for=condition=ready pod -l app=bedrock-service -n bedrock-chat --timeout=180s
-        kubectl wait --for=condition=ready pod -l app=file-service -n bedrock-chat --timeout=180s
-        kubectl wait --for=condition=ready pod -l app=intelligent-qa-service -n bedrock-chat --timeout=180s
+        kubectl wait --for=condition=ready pod -l app=bedrock-service -n bedrock-chat --timeout=10s
+        kubectl wait --for=condition=ready pod -l app=file-service -n bedrock-chat --timeout=10s
+        kubectl wait --for=condition=ready pod -l app=intelligent-qa-service -n bedrock-chat --timeout=10s
         
         # Deploy API Gateway last
         kubectl apply -f k8s/09-api-gateway-updated.yaml
