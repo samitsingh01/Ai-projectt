@@ -1,0 +1,27 @@
+# .github/workflows/deploy.yml
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Apply K8s files
+      run: |
+        kubectl apply -f k8s/01-namespace.yaml
+        kubectl apply -f k8s/02-secrets.yaml
+        kubectl apply -f k8s/03-configmap.yaml
+        kubectl apply -f k8s/04-rbac.yaml
+        kubectl apply -f k8s/05-mysql-fixed.yaml
+        kubectl apply -f k8s/06-bedrock-service.yaml
+        kubectl apply -f k8s/07-file-service-hostpath.yaml
+        kubectl apply -f k8s/08-qa-service-fixed.yaml
+        kubectl apply -f k8s/09-api-gateway-updated.yaml
+        kubectl apply -f k8s/10-frontend-simple-proxy.yaml
