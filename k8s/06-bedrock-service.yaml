@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bedrock-service
+  namespace: bedrock-chat
+  labels:
+    app: bedrock-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bedrock-service
+  template:
+    metadata:
+      labels:
+        app: bedrock-service
+    spec:
+      serviceAccountName: bedrock-chat-sa
+      containers:
+      - name: bedrock-service
+        image: samitsinghhh/langchain-3:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 9000
+          name: http
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: aws-secrets
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: aws-secrets
+              key: AWS_SECRET_ACCESS_KEY
+        - name: AWS_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: AWS_REGION
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 9000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "384Mi"
+            cpu: "300m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bedrock-service
+  namespace: bedrock-chat
+spec:
+  selector:
+    app: bedrock-service
+  ports:
+  - port: 9000
+    targetPort: 9000
+    name: http
+  type: ClusterIP

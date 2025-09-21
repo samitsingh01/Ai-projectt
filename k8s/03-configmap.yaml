@@ -1,10 +1,24 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: mysql-init-script
-  namespace: langchain-app
+  name: app-config
+  namespace: bedrock-chat
 data:
-  01-init.sql: |
+  AWS_REGION: "us-east-1"
+  DATABASE_URL: "mysql://bedrock_user:bedrock_password@mysql:3306/bedrock_chat"
+  BEDROCK_SERVICE_URL: "http://bedrock-service:9000"
+  FILE_SERVICE_URL: "http://file-service:7000"
+  QA_SERVICE_URL: "http://intelligent-qa-service:6000"
+  UPLOAD_DIR: "/app/uploads"
+  REACT_APP_API_URL: "http://localhost:8000"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init-script
+  namespace: bedrock-chat
+data:
+  init.sql: |
     CREATE DATABASE IF NOT EXISTS bedrock_chat;
     USE bedrock_chat;
     
@@ -64,6 +78,7 @@ data:
         word_count INT DEFAULT 0,
         char_count INT DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (file_id) REFERENCES uploaded_files(id) ON DELETE CASCADE,
         INDEX idx_session_id (session_id),
         INDEX idx_file_id (file_id),
         INDEX idx_session_file (session_id, file_id),
@@ -86,9 +101,55 @@ data:
         INDEX idx_confidence (confidence_score),
         INDEX idx_session_confidence (session_id, confidence_score)
     );
-
+    
+    CREATE TABLE IF NOT EXISTS qa_feedback (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        interaction_id INT NOT NULL,
+        rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+        feedback_text TEXT,
+        is_helpful BOOLEAN,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (interaction_id) REFERENCES qa_interactions(id) ON DELETE CASCADE,
+        INDEX idx_interaction_id (interaction_id),
+        INDEX idx_rating (rating),
+        INDEX idx_created_at (created_at)
+    );
+    
+    CREATE TABLE IF NOT EXISTS document_analysis (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        file_id INT NOT NULL,
+        session_id VARCHAR(255) NOT NULL,
+        analysis_type ENUM('summary', 'classification', 'entities', 'sentiment', 'topics') NOT NULL,
+        analysis_results JSON NOT NULL,
+        confidence_score FLOAT DEFAULT 0.0,
+        model_used VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (file_id) REFERENCES uploaded_files(id) ON DELETE CASCADE,
+        INDEX idx_file_id (file_id),
+        INDEX idx_session_id (session_id),
+        INDEX idx_analysis_type (analysis_type),
+        INDEX idx_confidence (confidence_score)
+    );
+    
+    CREATE TABLE IF NOT EXISTS session_analytics (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        session_id VARCHAR(255) UNIQUE NOT NULL,
+        total_documents INT DEFAULT 0,
+        total_chunks INT DEFAULT 0,
+        total_questions INT DEFAULT 0,
+        avg_confidence FLOAT DEFAULT 0.0,
+        total_chat_messages INT DEFAULT 0,
+        session_duration_minutes INT DEFAULT 0,
+        last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_session_id (session_id),
+        INDEX idx_last_activity (last_activity)
+    );
+    
     GRANT ALL PRIVILEGES ON bedrock_chat.* TO 'bedrock_user'@'%';
     FLUSH PRIVILEGES;
     
-    INSERT IGNORE INTO users (session_id, user_preferences) VALUES 
-    ('demo_session_001', '{"theme": "dark", "language": "en"}');
+    INSERT INTO users (session_id, user_preferences) VALUES 
+    ('demo_session_001', '{"theme": "dark", "language": "en"}')
+    ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP;
